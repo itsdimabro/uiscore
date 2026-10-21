@@ -1,0 +1,6 @@
+.build/
+*.app
+dist/
+.env*
+.DS_Store
+evidence/
