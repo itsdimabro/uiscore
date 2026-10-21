@@ -1,9 +1,9 @@
 import Foundation
 
-/// Per-meter ratings from one senior-designer Sonnet call (5 votes, median per meter), blended with the checklist score.
+/// Per-meter ratings from one senior-designer Sonnet call (5 votes, mean per meter), blended with the checklist score.
 /// Weights were chosen on the gold calibrate half and the LabintheWild train 40 only (see README, 0.3.0).
 public enum Designer {
-    public static let version = "d1"
+    public static let version = "d2"
     public static let meters = ["contrast", "grouping", "balance", "order", "familiar", "ease", "clarity", "trust"]
     /// Share of the designer rating in each meter; 0 keeps the checklist alone.
     public static let weights: [String: Double] = ["contrast": 0, "grouping": 0.75, "balance": 1, "order": 0.5, "familiar": 0.5, "ease": 1, "clarity": 0.75, "trust": 0]
@@ -21,7 +21,7 @@ public enum Designer {
         Meters, with anchors:
         contrast - Is text easy to see against its background? 1: light grey on white, text on busy photos. 5: body text passes 4.5:1 but small or secondary text is faint. 9: every text passes WCAG AA with margin, headings strong, nothing strains the eye.
         grouping - Do related things look grouped (Gestalt proximity, common region, similarity, alignment)? 1: evenly spaced items, no sense of units. 5: groups exist but gaps inside and between groups are similar. 9: less space inside a group than between groups everywhere, cards or shared edges mark groups, edges align.
-        balance - Does visual weight feel even across the page? 1: all heavy content crammed to one side or corner, big dead area. 5: mild lean to one side. 9: weight is distributed deliberately, asymmetry is counter-weighted, white space is intentional.
+        balance - Does visual weight feel even across the page? A centred card on a calm dark or light page is balanced. 1: all heavy content crammed to one side or corner, big dead area. 5: mild lean to one side. 9: weight is distributed deliberately, asymmetry is counter-weighted, white space is intentional.
         order - Visual hierarchy: is it clear what to look at first, second, third? 1: many items of equal weight compete, no focal point. 5: a focal point exists but several things compete. 9: one clear focal point, 3-4 distinct type sizes/weights, the main action stands out by contrast.
         familiar - Does it follow conventions people already know (logo top-left, nav in a bar, standard icons, button shapes, 8pt rhythm)? 1: unusual layout where nothing works as expected. 5: mostly standard with surprises. 9: every pattern is one users already know.
         ease - Is it easy to take in without effort (little clutter, few choices, generous white space, readable sizes)? 1: dense wall of text and links, tiny type. 5: moderate density. 9: calm, few choices, text 16px or more, lots of room.
@@ -31,7 +31,7 @@ public enum Designer {
         Facts measured by code (use as evidence, they are reliable):
         \(facts)
         
-        Reply with ONE JSON object only: {"reason":"<one sentence, plain, the main reason for the lowest score>","contrast":n,"grouping":n,"balance":n,"order":n,"familiar":n,"ease":n,"clarity":n,"trust":n}
+        Reply with ONE JSON object only: {"reason":"<one sentence, plain, the main reason for the lowest score. For balance, state exactly why it is below 9>","contrast":n,"grouping":n,"balance":n,"order":n,"familiar":n,"ease":n,"clarity":n,"trust":n}
         """
     }
 
@@ -59,13 +59,13 @@ public enum Designer {
         return Rating(scores: s, reason: (v["reason"].string ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
-    /// Median per meter over the valid votes; needs at least 2 of them.
-    static func median(_ rs: [Rating]) -> Rating? {
+    /// Mean per meter over the valid votes, kept continuous so one vote moving one step moves a meter by a fraction of a
+    /// point, not 13; needs at least 2 votes.
+    static func mean(_ rs: [Rating]) -> Rating? {
         guard rs.count >= 2 else { return nil }
         var out: [String: Double] = [:]
         for m in meters {
-            let v = rs.map { $0.scores[m]! }.sorted()
-            out[m] = v.count % 2 == 1 ? v[v.count / 2] : (v[v.count / 2 - 1] + v[v.count / 2]) / 2
+            out[m] = rs.map { $0.scores[m]! }.reduce(0, +) / Double(rs.count)
         }
         return Rating(scores: out, reason: rs.first { !$0.reason.isEmpty }?.reason ?? "")
     }
@@ -87,7 +87,7 @@ public enum Designer {
         return out
     }
 
-    /// Five parallel votes, median per meter. The medians for one image are stored, so scoring it again gives the same answer.
+    /// Five parallel votes (the model rejects a temperature setting), mean per meter. The means for one image (keyed by image hash) are stored, so scoring it again gives the same answer.
     /// nil when fewer than 2 votes are valid: the caller keeps the checklist.
     static func rate(keys: [String], image: [String: Any], facts: String, hash: String?, cacheDir: URL) async -> Rating? {
         let file = hash.map { cacheDir.appendingPathComponent("designer-\($0)-\(version).json") }
@@ -99,7 +99,8 @@ public enum Designer {
             for await x in g { if let x { v.append(x) } }
             return v
         }
-        guard let r = median(rs) else { return nil }
+        if rs.count < votes { FileHandle.standardError.write(Data("designer: only \(rs.count) of \(votes) votes valid\(rs.count < 2 ? "; scoring from the checklist alone" : "; rating not cached")\n".utf8)) }
+        guard let r = mean(rs) else { return nil }
         if rs.count == votes, let f = file {
             try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
             if let d = try? JSONEncoder().encode(r) { try? d.write(to: f) }

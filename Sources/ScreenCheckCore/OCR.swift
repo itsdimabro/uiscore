@@ -71,11 +71,15 @@ public enum OCR {
     /// Applies the model's role labels (by box index). Unlisted boxes stay "body".
     public static func applyRoles(_ roles: JSONValue, to boxes: [TextBox]) -> [TextBox] {
         var out = boxes
-        for role in ["heading", "subhead", "label", "nav", "button", "link", "logo", "demo", "legal"] {
+        // logo is applied first so a box the model also called a heading keeps the heading role: one box, one role.
+        for role in ["logo", "heading", "subhead", "label", "nav", "button", "link", "demo", "legal"] {
             for v in roles[role].array {
                 if let i = v.int, out.indices.contains(i) { out[i].role = role }
             }
         }
+        // The largest text on the page, clearly bigger than the rest, is the title, not a logo.
+        let sizes = boxes.map { $0.fontPx }.sorted()
+        if sizes.count >= 3, let big = boxes.indices.max(by: { boxes[$0].fontPx < boxes[$1].fontPx }), out[big].role == "logo", boxes[big].fontPx >= 1.5 * sizes[sizes.count / 2] { out[big].role = boxes[big].role }
         return out
     }
 }

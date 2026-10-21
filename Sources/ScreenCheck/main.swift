@@ -17,6 +17,13 @@ final class Delegate: NSObject, NSApplicationDelegate {
     /// Where the card was last dragged to; kept for this run of the app only.
     var savedOrigin: NSPoint?
     let lightboxPanel = LightboxPanel()
+    private var globalClickMonitor: Any?
+    private var localClickMonitor: Any?
+
+    func applicationWillTerminate(_ n: Notification) {
+        if let m = globalClickMonitor { NSEvent.removeMonitor(m) }
+        if let m = localClickMonitor { NSEvent.removeMonitor(m) }
+    }
 
     func applicationDidFinishLaunching(_ n: Notification) {
         if ProcessInfo.processInfo.environment["SCREENCHECK_IMPORT_KEYS"] == "1" { importKeys() }
@@ -30,14 +37,16 @@ final class Delegate: NSObject, NSApplicationDelegate {
         host.sizingOptions = [.intrinsicContentSize]
         panel.contentView = host
         lightboxPanel.zoom.onClose = { [weak self] in self?.model.closeLightbox() }
+        lightboxPanel.onOutsideClick = { [weak self] in self?.model.closeLightbox() }
+        lightboxPanel.setCloseAction { [weak self] in self?.model.closeLightbox() }
         model.onLightbox = { [weak self] open in
             guard let self else { return }
             if open, let img = self.model.fullImage(), let s = self.panel.screen ?? NSScreen.main {
-                let r = self.model.current
-                self.lightboxPanel.present(image: img, caption: "\(r?.pageName ?? "")   \(img.width) × \(img.height)", on: s)
+                self.lightboxPanel.present(image: img, on: s)
             } else if open { self.model.lightbox = false }
             else { self.lightboxPanel.dismiss { self.panel.makeKeyAndOrderFront(nil) } }
         }
+        installOutsideClick()
         model.onShow = { [weak self] in self?.showPanel() }
         model.onToggleHistory = { [weak self] in self?.clearFocus() }
         model.onClose = { [weak self] in self?.panel.orderOut(nil) }
@@ -56,6 +65,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
         menu.addItem(item("Quit", #selector(quit)))
         statusItem.menu = menu
         KeyboardShortcuts.onKeyUp(for: .check) { [weak self] in Task { @MainActor in self?.check() } }
+        #if DEBUG
         let env = ProcessInfo.processInfo.environment
         if let a = env["SCREENCHECK_APPEARANCE"] { NSApp.appearance = NSAppearance(named: a == "dark" ? .darkAqua : .aqua) }
         if env["SCREENCHECK_DEMO_RUN"] != nil { model.reloadHistory(); if let h = model.history.first { model.select(h); model.show() } }
@@ -64,7 +74,24 @@ final class Delegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + (Double(ProcessInfo.processInfo.environment["SCREENCHECK_AUTORUN_DELAY"] ?? "") ?? 0.5)) { [weak self] in self?.check() }
         }
         if let out = env["SCREENCHECK_ONBOARD_SNAPSHOT"] { snapshotOnboarding(out, step: Int(env["SCREENCHECK_ONBOARD_STEP"] ?? "0") ?? 0); return }
+        #endif
         if KeyStore.keys().claude.isEmpty || KeyStore.keys().jev.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.openOnboarding() } }
+    }
+    /// A click anywhere outside the card closes it. Clicks in other apps arrive through the global monitor, clicks in the card's
+    /// transparent margin through the local one; clicks on the card itself, the lightbox and other windows of ours are ignored.
+    func installOutsideClick() {
+        let kinds: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: kinds) { [weak self] _ in
+            MainActor.assumeIsolated { if self?.panel.isVisible == true { self?.model.outsideClick() } }
+        }
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: kinds) { [weak self] e in
+            MainActor.assumeIsolated {
+                guard let self, e.window === self.panel, self.panel.isVisible, let h = self.panel.contentView?.bounds.height else { return }
+                let p = CGPoint(x: e.locationInWindow.x, y: h - e.locationInWindow.y)
+                if !self.model.cardFrame.contains(p) { self.model.outsideClick() }
+            }
+            return e
+        }
     }
     /// A saved shortcut equal to the old default (Control+Option+S) is replaced by Command+Shift+V, once.
     func migrateShortcut() {
@@ -73,6 +100,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
             KeyboardShortcuts.setShortcut(.init(.v, modifiers: [.command, .shift]), for: .check)
         }
     }
+    #if DEBUG
     /// Dev/test hook: renders the card to a PNG once the run is complete (no Screen Recording permission needed).
     func startSnapshotWatcher(_ out: String, tip: String?, history: Bool) {
         var stage = 0
@@ -102,6 +130,11 @@ final class Delegate: NSObject, NSApplicationDelegate {
                 }
                 if stage == 3 {
                     if let u = ProcessInfo.processInfo.environment["SCREENCHECK_UNDO_DEMO"], let f = Double(u), let h = self.model.history.first { self.model.undoItem = h; self.model.undoProgress = f }
+                    if let k = ProcessInfo.processInfo.environment["SCREENCHECK_PENDING_DEMO"] {
+                        var p = RunResult.placeholder; p.createdAt = Date()
+                        if k == "scored", let h = self.model.history.first { p = h.result; p.createdAt = Date() }
+                        self.model.history.insert(HistoryItem(result: p, imageURL: nil, pending: true, scoreReady: k == "scored", key: "demo"), at: 0)
+                    }
                     if ProcessInfo.processInfo.environment["SCREENCHECK_INFO_HOVER"] != nil { self.model.tipKey = "contrast" }
                     if let h = ProcessInfo.processInfo.environment["SCREENCHECK_HOVER"], let i = Int(h), self.model.history.indices.contains(i) { self.model.demoHover = self.model.history[i].id }
                 }
@@ -120,6 +153,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+    #endif
     /// Dev hook: re-saves keys from env through KeyStore so this app owns the Keychain items, then exits.
     func importKeys() {
         let env = ProcessInfo.processInfo.environment
@@ -131,12 +165,14 @@ final class Delegate: NSObject, NSApplicationDelegate {
         print("import: jev \(KeyStore.get("jev") != nil ? "saved" : "FAILED"), claude-keys \(KeyStore.claudeKeys().count) saved")
         exit(0)
     }
-    /// A menu-bar app has no main menu, so Cmd+V/C/X/A/Z never reach text fields. This one is never visible but carries the key equivalents.
+    #if DEBUG
     /// Dev hook helper: MeterText has no public initialiser, so build it through its Codable form.
     func mt(_ why: String, _ fix: String) -> MeterText {
         let d = try! JSONSerialization.data(withJSONObject: ["why": why, "fix": fix])
         return try! JSONDecoder().decode(MeterText.self, from: d)
     }
+    #endif
+    /// A menu-bar app has no main menu, so Cmd+V/C/X/A/Z never reach text fields. This one is never visible but carries the key equivalents.
     func installEditMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem(); main.addItem(appItem); appItem.submenu = NSMenu()
@@ -180,7 +216,10 @@ final class Delegate: NSObject, NSApplicationDelegate {
     @objc func check() {
         let keys = KeyStore.keys()
         if keys.claude.isEmpty || keys.jev.isEmpty { openOnboarding(); return }
-        if let p = ProcessInfo.processInfo.environment["SCREENCHECK_IMAGE"] { model.checkLatest(imageOverride: URL(fileURLWithPath: p)) } else { model.checkLatest() }
+        #if DEBUG
+        if let p = ProcessInfo.processInfo.environment["SCREENCHECK_IMAGE"] { model.checkLatest(imageOverride: URL(fileURLWithPath: p)); return }
+        #endif
+        model.checkLatest()
     }
     @objc func history() { model.reloadHistory(); model.show(); if !model.historyOpen { model.toggleHistory() } }
     @objc func openSettings() {
@@ -204,6 +243,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
         }
         onboarding?.center(); NSApp.activate(ignoringOtherApps: true); onboarding?.makeKeyAndOrderFront(nil)
     }
+    #if DEBUG
     /// Dev/test hook: renders one onboarding step with sample keys (never reads or writes the Keychain).
     func snapshotOnboarding(_ out: String, step: Int) {
         let m = OnboardingModel(demo: true); m.step = step
@@ -224,6 +264,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
         }
     }
+    #endif
     @objc func quit() { model.finalizePending(); NSApp.terminate(nil) }
 }
 

@@ -212,7 +212,12 @@ public enum Scoring {
         a["fi_overlay"] = !flag("has_overlay", false)
         a["h_first"] = Scoring.firstIsHeadline(f.boxes)
         a["h_one_cta"] = prim == "one"
-        a["h_cta_fold"] = prim != "none" && (v["primary_y_pct"].double ?? 100) <= 60
+        // The CTA counts as above the fold when its centre sits within the first 900 pt (a common laptop viewport).
+        // Without a measured position the check stays unanswered (N/A) rather than passing; a percentage counts as in the first 60%.
+        if prim != "none" {
+            if let pt = v["primary_y_pt"].double { a["h_cta_fold"] = pt <= 900 }
+            else if let pct = v["primary_y_pct"].double { a["h_cta_fold"] = pct <= 60 }
+        }
         a["h_nav_quiet"] = flag("nav_quieter_than_headline", true)
         a["h_emphasis"] = Scoring.emphasisCount(f.boxes) <= 3
         a["f_logo"] = ["top-left", "top-center"].contains(word("logo_position"))
@@ -246,12 +251,14 @@ public enum Scoring {
             a["fi_space"] = s.emptyPct >= 0.25
             a["fi_palette"] = (s.colorfulness ?? 0) <= 45
             // Visual feeling, all from pixels.
-            a["vv1"] = s.bgLum > 0.5
+            // Valence judges harmony, not lightness: a light page, or a dark one with a calm palette, is a restrained background.
+            let calm = (s.hueBuckets ?? s.hueCount) <= 4 && s.accentSat <= 0.7
+            a["vv1"] = s.bgLum > 0.5 || calm
             a["vv2"] = s.coolShare >= 0.5
             a["vv3"] = s.emptyPct >= 0.3
             a["vv5"] = (s.hueBuckets ?? s.hueCount) > 4
             a["vv6"] = s.redOrangePct > 0.03 && (s.greenPct ?? 0) > 0.03
-            a["vv7"] = s.bgLum < 0.05
+            a["vv7"] = s.bgLum < 0.05 && !calm
             a["vv9"] = s.accentSat > 0.7
             a["vi9"] = s.bgLum < 0.2
             a["vi1"] = s.accentSat > 0.7

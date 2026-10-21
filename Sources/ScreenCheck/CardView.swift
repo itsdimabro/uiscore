@@ -21,6 +21,7 @@ struct CardView: View {
             MainColumn(m: m)
         }
         .fixedSize(horizontal: false, vertical: true)
+        .overlayPreferenceValue(TipSpecKey.self) { TipHost(m: m, specs: $0) }
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(T.card))
         .background(GeometryReader { g in
@@ -158,7 +159,7 @@ struct TitleView: View {
         Text(m.editing ? (draft.isEmpty ? name : draft) : name).font(.system(size: 17, weight: .bold)).foregroundStyle(T.ink).lineLimit(1)
             .opacity(m.editing ? 0 : 1)
             .overlay(alignment: .leading) {
-                if m.editing { TitleField(initial: name, text: $draft, commit: { m.rename($0) }).padding(.trailing, -24).frame(minWidth: 40) }
+                if m.editing { TitleField(initial: name, text: $draft, model: m, commit: { m.rename($0) }).padding(.trailing, -24).frame(minWidth: 40) }
             }
             .onChange(of: m.editing) { e in if e { draft = name } }
         .fixedSize()
@@ -177,6 +178,7 @@ struct TitleView: View {
 struct TitleField: NSViewRepresentable {
     let initial: String
     @Binding var text: String
+    let model: AppModel
     let commit: (String) -> Void
     func makeCoordinator() -> Coord { Coord(self) }
     func makeNSView(context: Context) -> NSTextField {
@@ -186,6 +188,8 @@ struct TitleField: NSViewRepresentable {
         f.lineBreakMode = .byClipping; f.cell?.usesSingleLineMode = true; f.cell?.isScrollable = true
         f.delegate = context.coordinator
         context.coordinator.field = f
+        model.commitEdit = { [weak coord = context.coordinator] in coord?.finish() }
+        model.commitOwner = context.coordinator
         DispatchQueue.main.async {
             guard let w = f.window else { return }
             w.makeFirstResponder(f)
@@ -204,6 +208,8 @@ struct TitleField: NSViewRepresentable {
     func updateNSView(_ f: NSTextField, context: Context) { f.textColor = NSColor(T.ink); context.coordinator.parent = self }
     static func dismantleNSView(_ f: NSTextField, coordinator: Coord) {
         if let m = coordinator.monitor { NSEvent.removeMonitor(m) }
+        let m = coordinator.parent.model
+        if m.commitOwner === coordinator { m.commitEdit = nil; m.commitOwner = nil }
     }
     @MainActor final class Coord: NSObject, NSTextFieldDelegate {
         var parent: TitleField; weak var field: NSTextField?; var monitor: Any?
@@ -221,7 +227,8 @@ struct TitleField: NSViewRepresentable {
             if sel == #selector(NSResponder.insertNewline(_:)) { finish(); return true }
             return false
         }
-        func finish() { if let f = field { parent.commit(f.stringValue) } }
+        func finish() { if let f = field, !done { done = true; parent.commit(f.stringValue) } }
+        var done = false
     }
 }
 

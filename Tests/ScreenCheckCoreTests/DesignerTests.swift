@@ -17,11 +17,15 @@ final class DesignerTests: XCTestCase {
         XCTAssertNil(Designer.parse(reply(0)))
         XCTAssertNil(Designer.parse(try! JSONValue.firstObject(in: "{\"reason\":\"x\"," + Designer.meters.map { "\"\($0)\":5.5" }.joined(separator: ",") + "}")))
     }
-    func testMedianNeedsTwoVotes() {
+    func testMeanNeedsTwoVotesAndIsContinuous() {
         let a = Designer.parse(reply(3))!, b = Designer.parse(reply(5))!, c = Designer.parse(reply(9))!
-        XCTAssertNil(Designer.median([a]))
-        XCTAssertEqual(Designer.median([a, b, c])?.scores["order"], 5)
-        XCTAssertEqual(Designer.median([a, c])?.scores["order"], 6)
+        XCTAssertNil(Designer.mean([a]))
+        XCTAssertEqual(Designer.mean([a, b, c])!.scores["order"]!, 17.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(Designer.mean([a, c])?.scores["order"], 6)
+        // five votes, one moving a single step: the mean moves 0.2 of a rating step (2.5 points), not a whole step
+        let five = [5, 5, 5, 5, 5].map { Designer.parse(reply($0))! }, flip = [5, 5, 5, 5, 6].map { Designer.parse(reply($0))! }
+        let d = Designer.points(Designer.mean(flip)!.scores["order"]!) - Designer.points(Designer.mean(five)!.scores["order"]!)
+        XCTAssertEqual(d, 2.5, accuracy: 1e-9)
     }
     func meter(_ s: Int, applicable: Bool? = nil) -> MeterResult {
         MeterResult(score: s, lowConfidence: false, confidencePct: 100, checks: [], note: nil, applicable: applicable)

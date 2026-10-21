@@ -274,10 +274,11 @@ struct HistorySidebar: View {
                 // Layout flipped so the overlay scroller sits on the left; the content is flipped back.
                 ScrollView(.vertical) {
                     VStack(spacing: 4) {
-                        ForEach(m.history) { h in HistoryRow(m: m, h: h, now: now) }
+                        ForEach(m.history) { h in HistoryRow(m: m, h: h, now: now).transition(.opacity.combined(with: .move(edge: .top))) }
                         if m.history.isEmpty { Text("No checks yet.").font(.system(size: 11)).foregroundStyle(T.ink2).padding(8) }
                     }
                     .padding(.leading, 8).padding(.trailing, 16)
+                    .animation(T.open(0.35), value: m.history.map(\.id))
                     .environment(\.layoutDirection, .leftToRight)
                 }
                 .environment(\.layoutDirection, .rightToLeft)
@@ -302,22 +303,24 @@ struct HistoryRow: View {
     @State private var hover = false
     var now: Date
     var body: some View {
-        let selected = m.current?.id == h.id
+        let selected = m.current?.id == h.result.id && !h.pending
         let hot = hover || m.demoHover == h.id
         HStack(spacing: 10) {
-            if let i = m.thumb(h.imageURL) { Image(nsImage: i).resizable().scaledToFill().frame(width: 72, height: 45).clipShape(RoundedRectangle(cornerRadius: 5)) }
+            if let i = h.imageURL.flatMap({ m.thumb($0) }) { Image(nsImage: i).resizable().scaledToFill().frame(width: 72, height: 45).clipShape(RoundedRectangle(cornerRadius: 5)) }
             else { RoundedRectangle(cornerRadius: 5).fill(T.track).frame(width: 72, height: 45) }
             VStack(alignment: .leading, spacing: 0) {
-                Text(h.result.pageName).font(.system(size: 13, weight: .semibold)).foregroundStyle(T.ink).lineLimit(1)
+                if h.result.pageName.isEmpty { Bar(w: 90, h: 11).padding(.vertical, 1.5) }
+                else { Text(h.result.pageName).font(.system(size: 13, weight: .semibold)).foregroundStyle(T.ink).lineLimit(1) }
                 Text(RelativeDate.label(for: h.result.createdAt, now: now)).font(.system(size: 11)).foregroundStyle(T.ink2).lineLimit(1)
-                Text("Score \(h.result.overallScore)").font(.system(size: 11, weight: .semibold)).foregroundStyle(T.score(h.result.overallScore, scheme))
+                if h.pending && !h.scoreReady { Bar(w: 44, h: 10).padding(.vertical, 1) }
+                else { Text("Score \(h.result.overallScore)").font(.system(size: 11, weight: .semibold)).foregroundStyle(T.score(h.result.overallScore, scheme)) }
             }
             Spacer(minLength: 0)
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(selected ? T.soft : (hot ? T.hoverSoft : .clear)))
         .overlay(alignment: .topTrailing) {
-            if hot {
+            if hot && !h.pending {
                 Button { m.delete(h) } label: {
                     Image(systemName: "trash").font(.system(size: 11, weight: .medium)).foregroundStyle(T.ink2).frame(width: 24, height: 24)
                         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(T.card))
@@ -326,9 +329,9 @@ struct HistoryRow: View {
         }
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .focusable(false)
-        .onTapGesture { m.select(h) }
+        .onTapGesture { if !h.pending { m.select(h) } }
         .onHover { hover = $0 }
-        .contextMenu { Button("Delete", role: .destructive) { m.delete(h) } }
+        .contextMenu { if !h.pending { Button("Delete", role: .destructive) { m.delete(h) } } }
         .accessibilityElement(children: .combine).accessibilityAddTraits(.isButton)
     }
 }

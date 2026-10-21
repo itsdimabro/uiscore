@@ -97,6 +97,8 @@ public enum Applicability {
         if !footerKnown { na.insert("T4") }
         if f.navCount == 0 { na.formUnion(["h_nav_quiet", "f_nav", "f_navcount", "C4"]) }
         if f.primaryCount == 0 { na.formUnion(["C2", "C3", "C8", "h_cta_fold"]) }
+        // Sign-in, forms and screens inside a product: the submit button sits below its fields by design, so the fold is not asked.
+        if pageType.lowercased().range(of: #"\bforms?\b"#, options: .regularExpression) != nil || context.inside { na.insert("h_cta_fold") }
         if f.options == 0 { na.formUnion(["C7", "f_links"]) }
         if f.vision["fonts"].string == nil { na.insert("E12") }
         if f.vision["accent_colors"].string == nil { na.insert("E13") }

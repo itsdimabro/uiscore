@@ -129,6 +129,7 @@ public struct GroupingMetrics: Codable, Equatable {
     public var rhythmGaps: Int = 0
     public var styleShare: Double = 1       // share of boxes matching their group's dominant size, weight and colour
     public var alignment = AlignmentMetrics()
+    public var groupAlignShare: Double? = nil   // share of boxes in groups of 2+ that share a left edge, right edge or centre line with a groupmate
     public init() {}
 }
 
@@ -165,6 +166,20 @@ extension Layout {
         var members: [Int: [Int]] = [:]
         for i in b.indices { members[ids[i], default: []].append(i) }
         m.groups = members.count
+        // Alignment is judged inside each group: a centred title above left-aligned fields is two groups, each aligned.
+        let atol = max(8, Double(imageWidth) * 0.01)
+        var inGroups = 0, alignedInGroup = 0
+        for full in members.values {
+            // Button text is centred inside its own container, whose edges carry the alignment: it is not judged.
+            let mem = full.filter { b[$0].role != "button" }
+            guard mem.count >= 2 else { continue }
+            for i in mem {
+                inGroups += 1
+                let others = mem.filter { $0 != i }
+                if others.contains(where: { abs(b[$0].x - b[i].x) <= atol || abs((b[$0].x + b[$0].w) - (b[i].x + b[i].w)) <= atol || abs((b[$0].x + b[$0].w / 2) - (b[i].x + b[i].w / 2)) <= atol }) { alignedInGroup += 1 }
+            }
+        }
+        if inGroups > 0 { m.groupAlignShare = Double(alignedInGroup) / Double(inGroups) }
         m.groupedShare = Double(members.values.filter { $0.count >= 2 }.reduce(0) { $0 + $1.count }) / Double(b.count)
         m.ambiguousShare = Double(edges.filter { $0.2 >= 1.2 * med && $0.2 < 1.5 * med }.count) / Double(edges.count)
         var between: [Double] = []
@@ -239,7 +254,7 @@ extension Layout {
     /// Grouping checks: id, weight, pass (nil = not applicable). Weights sum to 100.
     public static func groupingChecks(_ m: GroupingMetrics) -> [(id: String, weight: Int, pass: Bool?)] {
         [("g_prox", 35, m.groups >= 2 && m.groups <= 24 && m.groupedShare >= 0.6 && m.ambiguousShare <= 0.25 && m.separation >= 1.5),
-         ("g_align", 25, m.alignment.alignedShare >= 0.5 && m.alignment.topLinesShare >= 0.35),
+         ("g_align", 25, m.groupAlignShare.map { $0 >= 0.6 } ?? (m.alignment.alignedShare >= 0.5 && m.alignment.topLinesShare >= 0.35)),
          ("g_region", 20, m.regionShare < 0.15 ? nil : m.regionAgreement >= 0.75),
          ("g_sim", 20, m.styleShare >= 0.6)]
     }
@@ -255,7 +270,7 @@ extension Layout {
     }
     static let groupingFailures: [String: String] = [
         "g_prox": "gaps inside groups and between groups are too alike, so groups blur together",
-        "g_align": "text does not share a few clear left, right or centre lines",
+        "g_align": "items inside a group do not share a left, right or centre line",
         "g_region": "groups do not sit on shared cards or panels",
         "g_sim": "items in one group differ in size, weight or colour",
     ]
@@ -270,12 +285,24 @@ extension Layout {
     public static func alignmentScore(_ m: AlignmentMetrics) -> Int {
         (m.alignedShare >= 0.5 ? 30 : 0) + (m.topLinesShare >= 0.35 ? 45 : 0) + (m.gapRegularity >= 0.4 ? 25 : 0)
     }
+    /// Boxes grouping and balance text may use: no logos, and nothing labelled demo or sitting inside the area the demo boxes span.
+    /// The model's demo list wobbles by a box or two between runs; the span it covers does not.
+    static func pageText(_ boxes: [TextBox]) -> [TextBox] {
+        let demo = boxes.filter { $0.role == "demo" }
+        guard demo.count >= 3 else { return boxes.filter { !["demo", "logo"].contains($0.role) } }
+        let x0 = demo.map { $0.x }.min()!, y0 = demo.map { $0.y }.min()!, x1 = demo.map { $0.x + $0.w }.max()!, y1 = demo.map { $0.y + $0.h }.max()!
+        return boxes.filter { b in
+            if ["demo", "logo"].contains(b.role) { return false }
+            let cx = b.x + b.w / 2, cy = b.y + b.h / 2
+            return !(cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1)
+        }
+    }
     static func meters(pixels: Pixels?, boxes: [TextBox], imageWidth: Int) -> [String: MeterResult] {
         var out: [String: MeterResult] = [:]
         if let px = pixels {
             out["balance"] = MeterResult(score: balanceScore(balance(weightGrid(px))), lowConfidence: false, confidencePct: 100, checks: [], note: nil)
         }
-        let text = boxes.filter { !["demo", "logo"].contains($0.role) }
+        let text = pageText(boxes)
         if text.count >= 4 {
             out["grouping"] = groupingResult(grouping(text, pixels: pixels, imageWidth: imageWidth))
         } else {
@@ -297,7 +324,7 @@ extension Layout {
             if b.symmetry < 0.8 { f.append("the two halves do not mirror each other") }
             out["balance"] = f
         }
-        let text = boxes.filter { !["demo", "logo"].contains($0.role) }
+        let text = pageText(boxes)
         if text.count >= 4 {
             let g = grouping(text, pixels: pixels, imageWidth: imageWidth)
             out["grouping"] = groupingChecks(g).filter { $0.pass == false }.compactMap { groupingFailures[$0.id] }

@@ -242,7 +242,7 @@ public enum History {
 
 /// Runs that were deleted but can still be brought back. One slot: a new delete makes the previous one final.
 public struct PendingDeletions {
-    public static let window: TimeInterval = 4
+    public static let window: TimeInterval = 3
     public private(set) var id: String?
     private var at: Date?
     public init() {}

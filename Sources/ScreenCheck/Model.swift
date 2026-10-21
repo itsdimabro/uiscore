@@ -2,7 +2,13 @@ import SwiftUI
 import AppKit
 import ScreenCheckCore
 
-struct HistoryItem: Identifiable { let result: RunResult; let imageURL: URL; var id: String { result.id } }
+/// `key` keeps a row's identity while a live run goes from pending to saved, so the row is updated in place and never re-inserted.
+struct HistoryItem: Identifiable {
+    let result: RunResult; var imageURL: URL?
+    var pending = false; var scoreReady = false
+    var key: String? = nil
+    var id: String { key ?? result.id }
+}
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -52,6 +58,15 @@ final class AppModel: ObservableObject {
     func openLightbox() { lightbox = true; onLightbox(true) }
     func closeLightbox() { lightbox = false; onLightbox(false) }
     var customName: String?
+    /// Set when a click outside the card ends a title edit from outside the app; the field saves and stops editing.
+    var commitEdit: (() -> Void)?
+    private var editEnded = Date.distantPast
+    private var liveItem: HistoryItem?
+    private var liveKey = ""
+    /// Row identity per saved run, so a row keeps its id after the run is saved and a later run never flips it.
+    private var stableKeys: [String: String] = [:]
+    /// Owner of `commitEdit`, so a dismantled title field only clears its own hook.
+    weak var commitOwner: AnyObject?
     var pending = PendingDeletions()
     var undoTask: Task<Void, Never>?
     /// Score appears once every meter is in and the tooltip text is written.
@@ -78,11 +93,34 @@ final class AppModel: ObservableObject {
     }
 
     func reloadHistory() {
-        history = History.load().filter { $0.0.id != pending.id }.map { HistoryItem(result: $0.0, imageURL: $0.1) }
+        var items = History.load().filter { $0.0.id != pending.id }.map { HistoryItem(result: $0.0, imageURL: $0.1, key: stableKeys[$0.0.id]) }
+        if let l = liveItem, l.result.id.isEmpty || !items.contains(where: { $0.result.id == l.result.id }) { items.insert(l, at: 0) }
+        history = items
+    }
+
+    /// The new run gets its History row the moment the card opens, with skeleton values.
+    private func beginLive() {
+        liveKey = UUID().uuidString
+        var p = RunResult.placeholder; p.createdAt = Date()
+        liveItem = HistoryItem(result: p, imageURL: nil, pending: true, key: liveKey)
+        withAnimation(T.open(0.35)) { reloadHistory() }
+    }
+    private func setLive(_ r: RunResult, scoreReady: Bool) {
+        guard var l = liveItem else { return }
+        stableKeys[r.id] = liveKey
+        l = HistoryItem(result: r, imageURL: currentImage ?? l.imageURL, pending: true, scoreReady: scoreReady || l.scoreReady, key: liveKey)
+        liveItem = l
+        if let i = history.firstIndex(where: { $0.id == liveKey }) { history[i] = l } else { history.insert(l, at: 0) }
+    }
+    private func setLiveImage(_ url: URL) {
+        guard var l = liveItem else { return }
+        l.imageURL = url; liveItem = l
+        if let i = history.firstIndex(where: { $0.id == liveKey }) { history[i].imageURL = url }
     }
 
     func delete(_ item: HistoryItem) {
-        if let done = pending.delete(item.id) { History.remove(id: done) }
+        if item.pending { return }
+        if let done = pending.delete(item.result.id) { History.remove(id: done) }
         withAnimation(T.open(0.25)) { history.removeAll { $0.id == item.id }; undoItem = item }
         undoTask?.cancel()
         undoTask = Task { [weak self] in
@@ -103,7 +141,7 @@ final class AppModel: ObservableObject {
 
     func rename(_ name: String) {
         let n = PageName.limitTyped(name).trimmingCharacters(in: .whitespacesAndNewlines)
-        editing = false
+        editing = false; editEnded = Date()
         guard !n.isEmpty, var r = current else { return }
         customName = n; r.pageName = n; current = r
         History.rename(id: r.id, to: n); reloadHistory()
@@ -117,6 +155,14 @@ final class AppModel: ObservableObject {
     func close() {
         withAnimation(T.close()) { shown = false; tipKey = nil }; if lightbox { closeLightbox() }
         DispatchQueue.main.asyncAfter(deadline: .now() + (T.reduceMotion ? 0 : 0.2)) { [self] in if !shown { onClose() } }
+    }
+
+    /// A click outside the card: ends a title edit (saving it), otherwise closes the card like Esc or the X.
+    func outsideClick() {
+        if editing { commitEdit?(); return }
+        if lightbox { closeLightbox(); return }
+        if Date().timeIntervalSince(editEnded) < 0.2 || !shown { return }
+        close()
     }
 
     func escape() {
@@ -148,6 +194,7 @@ final class AppModel: ObservableObject {
         instant = false
         current = r; currentImage = image; textPending = !r.textComplete; phase = .ready; ready = Meters.allReady; editing = false
         if !History.exists(id: r.id) { try? History.save(r, image: image) }
+        liveItem = nil
         reloadHistory()
         show()
     }
@@ -166,7 +213,7 @@ final class AppModel: ObservableObject {
         task?.cancel()
         let token = UUID(); runToken = token
         let t0 = Date()
-        customName = nil; editing = false
+        customName = nil; editing = false; liveItem = nil
         task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -184,28 +231,28 @@ final class AppModel: ObservableObject {
                     }
                 }
                 // 2. Not seen before: the skeleton shows only until the first value exists.
-                self.reloadHistory(); self.currentImage = nil; self.instant = false
+                self.currentImage = nil; self.instant = false; self.beginLive()
                 withAnimation(T.open()) { self.phase = .loading; self.textPending = false; self.current = nil; self.ready = [] }
                 self.show()
                 let found: ScreenshotFinder.Found?
                 if imageOverride != nil { found = quick } else { found = await ScreenshotFinder.find() }
                 guard self.runToken == token else { return }
                 guard let url = imageOverride ?? found?.url else { throw PipelineError.noScreenshot }
-                self.currentImage = url
+                self.currentImage = url; self.setLiveImage(url)
                 let keys = KeyStore.keys()
                 let apply = { (r: RunResult) -> RunResult in var r = r; if let n = self.customName { r.pageName = n }; return r }
                 var sawFirst = false
                 let result = try await Pipeline(keys: keys).run(imageURL: url, fallbackName: "Screenshot", onScores: { scores in
                     Task { @MainActor in
                         guard self.runToken == token else { return }
-                        withAnimation(T.open(0.5)) { self.current = apply(scores); self.phase = .ready; self.textPending = !scores.text.values.contains { !$0.why.isEmpty }; self.ready = Meters.allReady }
+                        withAnimation(T.open(0.5)) { self.current = apply(scores); self.setLive(apply(scores), scoreReady: true); self.phase = .ready; self.textPending = !scores.text.values.contains { !$0.why.isEmpty }; self.ready = Meters.allReady }
                         self.mark("all scores", t0)
                     }
                 }, onPartial: { partial, set in
                     Task { @MainActor in
                         guard self.runToken == token else { return }
                         if !sawFirst { sawFirst = true; self.mark("first value", t0) }
-                        withAnimation(T.open(0.5)) { self.current = apply(partial); self.textPending = true; self.ready = set }
+                        withAnimation(T.open(0.5)) { self.current = apply(partial); self.setLive(apply(partial), scoreReady: false); self.textPending = true; self.ready = set }
                     }
                 })
                 guard self.runToken == token else { return }
@@ -213,13 +260,15 @@ final class AppModel: ObservableObject {
                 try? History.save(final, image: url)
                 withAnimation(T.open(0.4)) { self.current = final; self.textPending = false; self.ready = Meters.allReady }
                 self.mark("all values", t0)
-                self.reloadHistory()
+                self.liveItem = nil; self.reloadHistory()
             } catch is CancellationError {
+                guard self.runToken == token else { return }
+                self.liveItem = nil; self.reloadHistory()
             } catch {
                 guard self.runToken == token else { return }
                 let e = error as? PipelineError
                 let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                withAnimation(T.open()) { self.phase = .error(msg, e?.isRetryable ?? true); self.textPending = false }
+                withAnimation(T.open()) { self.phase = .error(msg, e?.isRetryable ?? true); self.textPending = false; self.liveItem = nil; self.reloadHistory() }
                 self.show()
             }
         }

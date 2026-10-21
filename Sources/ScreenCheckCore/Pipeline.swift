@@ -41,6 +41,10 @@ public struct Pipeline {
                         var votes: [Int: Int] = [:]
                         for r in rs { for v in r["roles"][role].array { if let i = v.int { votes[i, default: 0] += 1 } } }
                         roles[role] = .array(votes.filter { $0.value * 2 > rs.count }.keys.sorted().map { .number(Double($0)) })
+                        if role == "logo" {
+                            let heads = Set(rs.flatMap { $0["roles"]["heading"].array.compactMap { $0.int } }.filter { id in rs.filter { $0["roles"]["heading"].array.contains { $0.int == id } }.count * 2 > rs.count })
+                            roles[role] = .array(roles[role]!.array.filter { !heads.contains($0.int ?? -1) })
+                        }
                     }
                 }
                 out[k] = .object(roles)
@@ -139,11 +143,114 @@ public struct Pipeline {
         }
     }
 
+    /// Per-meter facts for the writer: score, what failed, and for a meter scored below 100 with nothing failed in code
+    /// (designer-only Balance, or a designer-lowered meter) the designer's reason, so the text explains the number.
+    static func writerMeterFacts(meters: [String: MeterResult], failed: [String: [String]], designerReason: String?) -> [String: Any] {
+        var out: [String: Any] = [:]
+        for (k, m) in meters {
+            var e: [String: Any] = ["score": m.score, "failed": failed[k] ?? [String]()]
+            if m.designer != nil, m.score < 100, (failed[k] ?? []).isEmpty, let r = designerReason, !r.isEmpty { e["deduction"] = r }
+            out[k] = e
+        }
+        return out
+    }
+
+    /// The Why line explains in words: no score numbers, no naming another meter. Sentences that do are dropped.
+    static let topicWords: [String: String] = [
+        "balance": #"\b(weight|halves|mirror|lopsided|heavier|centroid)\b"#, "grouping": #"\b(groups?|grouped|line up|shared edge)\b"#,
+        "contrast": #"\b(contrast|faint|hard to read)\b"#, "order": #"\b(eye|hierarchy|emphasis|focal|first stop|shouted)\b"#,
+        "familiar": #"\b(convention|usual pattern|top menu|familiar)\b"#, "ease": #"\b(px|words|clutter|dense|gradient|flat|text size)\b"#,
+        "clarity": #"\b(button|headline|label|slogan|vague)\b"#, "trust": #"\b(proof|screenshot|ads?|chat widget|customer logos?)\b"#]
+    /// A sentence about another meter's topic and none of this one's is dropped.
+    static func offTopic(_ l: String, meter: String) -> Bool {
+        guard let own = topicWords[meter] else { return false }
+        if l.range(of: own, options: .regularExpression) != nil { return false }
+        return topicWords.contains { $0.key != meter && l.range(of: $0.value, options: .regularExpression) != nil }
+    }
+    static func cleanWhy(_ s0: String, meter: String, topicFilter: Bool = true) -> String {
+        let s = s0.replacingOccurrences(of: #"^[\s;:,.\-–—]+"#, with: "", options: .regularExpression)
+        let s2 = s.replacingOccurrences(of: #"(?i)^(the )?[a-z]+ (score )?(lost|loses|lose) points (because|since)\s*"#, with: "", options: .regularExpression, range: nil)
+        var t = s2.replacingOccurrences(of: #"^\s*[A-Z][a-z]+ (scores?|is at|sits at|has a score of) \d+( out of 100)?(?![\w%])( because| since|,)?\s*"#, with: "", options: .regularExpression)
+        if t != s2, let f = t.first { t = f.uppercased() + t.dropFirst() }
+        let others = Meters.order.filter { $0 != meter }
+        let sentences = t.replacingOccurrences(of: #"(?<=[.!?])\s+"#, with: "\u{1}", options: .regularExpression).split(separator: "\u{1}").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let kept = sentences.filter { sen in
+            let l = sen.lowercased()
+            if l.range(of: #"worth (changing|fixing)|nothing (needs|to) (change|fix)|small deduction remains"#, options: .regularExpression) != nil { return false }
+            if topicFilter, offTopic(l, meter: meter) { return false }
+            if l.range(of: #"doesn't reach|does not reach|\bis the (lowest|weakest)\b|\bthe designer\b|(?<![\d.:,])[1-9](?![\d.:,%]|\s?px)"#, options: .regularExpression) != nil { return false }
+            if l.range(of: #"\b\d+ or (fewer|more|less)\b|_px\b|\b[a-z]+_[a-z_]+\b|\bprimary=|\bbuttons\[\]"#, options: .regularExpression) != nil { return false }
+            if l.range(of: #"\b(nav(igation)?|menu)\b[^.]*\b(items?|choices|links|entries|count|many|long)\b|\b(too many|more than (seven|7))\b[^.]*\b(nav|menu)"#, options: .regularExpression) != nil { return false }
+            if l.range(of: #"\b(score|scores|scored|points?)\b[^.]*\d|\d+ ?/ ?100|\b(lowest|highest) score\b|\bscores? (is|of)\b"#, options: .regularExpression) != nil { return false }
+            if others.contains(where: { o in ["order", "balance", "grouping", "contrast", "familiar", "ease", "clarity", "trust"].contains(o) && l.range(of: "\\b" + o + "\\b (issue|problem|score|meter)", options: .regularExpression) != nil }) { return false }
+            if others.contains(where: { o in ["order", "balance", "grouping", "contrast", "familiar", "ease", "clarity", "trust"].contains(o) && l.range(of: "\\b\(o)\\b[^.]*\\b(weakest|lowest|most room|area|meter|is below|stays below)\\b|\\b(weakest|lowest) (area|meter)\\b", options: .regularExpression) != nil }) { return false }
+            return true
+        }
+        guard !kept.isEmpty else { return "" }
+        var out = kept.joined(separator: " ")
+        if let f = out.first, f.isLowercase { out = f.uppercased() + out.dropFirst() }
+        return out.last.map { ".!?".contains($0) } == true ? out : out + "."
+    }
+    /// Scored, but the 7-item cut-off is an own choice (meta-analysis of choice overload about 0): never advised, never nagged.
+    static let navCountIDs: Set<String> = ["C4", "f_navcount"]
+    /// Fix shapes a senior designer would not give: placeholders as labels, moving chat widgets or nav links, aligning nav with
+    /// hero, and vague "review/consider" lines.
+    static func bannedFix(_ s: String, page: String = "") -> Bool {
+        let f = s.lowercased()
+        if f.range(of: #"\b(lower|reduce|decrease|weaken)\b[^.]*\bcontrast\b"#, options: .regularExpression) != nil { return true }
+        if f.range(of: #"\b(shared|one|single) (horizontal |vertical )?(line|panel|card)\b|\bequal spacing\b|\binside a (single|one) panel\b"#, options: .regularExpression) != nil { return true }
+        if f.range(of: #"\b(rewrite|change|replace|reword)\b[^.]*\b(headline|title|hero)\b"#, options: .regularExpression) != nil {
+            // a rewrite is allowed only to a quoted replacement that is on the page
+            let q = (try? NSRegularExpression(pattern: #"\bto [\"“]([^\"”]+)[\"”]"#))?.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)).flatMap { Range($0.range(at: 1), in: s).map { String(s[$0]) } }
+            guard let q, !page.isEmpty || true else { return true }
+            if !page.isEmpty, !page.lowercased().contains(q.lowercased()) { return true }
+        }
+        let pats = [#"\b(add|use|rely on|put)\b[^.]*placeholders?"#, #"placeholders?\s+(as|instead of)\s+(a\s+)?labels?"#, "promo", "ribbon", "swoosh", "shared panel", "one panel", #"replace [^.]*(screenshot|image)"#, #"\b(move|shift|reposition|relocate)\b[^.]*\blinks?\b"#, #"\b(add|show)\b[^.]*(customer logos|rating|award|screenshot|left-side|counter-weight|visual weight)"#, "logo strip", "mirror", "gradient swoosh", "weight toward", "chat widget", "chat bubble", #"(move|shift|align|reposition)[^.]*\bnav"#, #"\bnav(igation)?\b[^.]*(one|shared|same) (left|line|edge|centre|center)"#, #"^\s*(review|consider|think about|look at|revisit)\b"#, "against its checklist", "cut copy until", #"\b(?!(16|13)\b)\d+(\.\d+)? ?px\b"#, #"\b(one|shared?|same) (centre|center) line\b|\bshare one\b"#, #"\bsmallest text\b|\b12 ?(-|to) ?14\b"#, #"\band (then )?(make|set|keep|use|put|add|remove|cut|raise|lower|move|change|enlarge|shrink)\b"#, #",\s*(then )?(make|set|keep|use|put|add|remove|cut|raise|lower|move|change|enlarge|shrink)\b"#, #"\bone step (smaller|lighter|larger|bigger|darker)\b|\bsmaller or lighter\b"#, #";\s*\w+"#, #"\b(rewrite|change|replace)\b.*\b(headline|slogan|line)\b.*\bsay what\b"#, #"\b\d+-\d+ real\b"#, #"\bnav(igation)?\b[^.]*\b(\d+|seven|few(er)?)\b|\b(menu|nav(igation)?) items\b"#, #"\b(less|lower|reduce)\b[^.]*\b(bold|emphasis)\b[^.]*\ball (but|except)\b|\ball (but|except)\b[^.]*\b(less bold|lower (the )?emphasis)\b"#, #"\bemphasis on all but\b"#]
+        return pats.contains { f.range(of: $0, options: .regularExpression) != nil }
+    }
+    /// A plain Why for a meter below 100 when the writer returned nothing: the designer's reason, else the first failed check as a sentence.
+    static let genericWhyPrefix = "A few points are lost on "
+    static func fallbackWhy(score: Int, failed: [Check], designer: Int?, designerReason: String, meter: String = "") -> String {
+        if score >= 100 { return "" }
+        let real = failed.filter { !navCountIDs.contains($0.id) }
+        if let d = designer, d < 100, !designerReason.isEmpty {
+            let w = cleanWhy(designerReason.replacingOccurrences(of: #"^[A-Za-z ]+ is the (lowest|weakest|lowest score) (at|of) \d+:\s*"#, with: "", options: .regularExpression), meter: meter, topicFilter: false)
+            let t = w.isEmpty ? "" : w.prefix(1).uppercased() + w.dropFirst()
+            if !t.isEmpty { return t }
+        }
+        if let s = real.compactMap({ plainCheck[$0.id] }).first { return s }
+        let topic = ["balance": "how weight spreads across the page", "grouping": "how clearly related items sit together", "contrast": "how easily text reads against its background", "order": "how clearly the eye is led through the page", "familiar": "how closely the layout follows usual patterns", "ease": "how easy the page is to take in", "clarity": "how clearly the main action stands out", "trust": "how trustworthy the page looks"][meter] ?? "the overall look"
+        return genericWhyPrefix + topic + "."
+    }
+    /// Quoted copy or capitalised product-like phrases in a Fix must exist in the page text; unknown copy means the Fix invented it.
+    /// An empty page text means no OCR is available, so nothing can be checked.
+    static func quotesOnPage(_ fix: String, page: String) -> Bool {
+        guard !page.isEmpty else { return true }
+        let hay = page.lowercased()
+        var quoted = (try? NSRegularExpression(pattern: #"[\"“”']([^\"“”']{2,})[\"“”']"#))?.matches(in: fix, range: NSRange(fix.startIndex..., in: fix)).compactMap { m in Range(m.range(at: 1), in: fix).map { String(fix[$0]) } } ?? []
+        // "such as Explore iPhone Duo features": an example phrase after "such as" / "to say" is invented copy too.
+        if let r = fix.range(of: #"(such as|e\.g\.|like) [A-Z][^.]*"#, options: .regularExpression) { quoted.append(String(fix[r]).replacingOccurrences(of: #"^(such as|e\.g\.|like) "#, with: "", options: .regularExpression)) }
+        if let r = fix.range(of: #"(?<=\bto )[A-Z]\w*(?:\s+(?:[A-Z]|i[A-Z])\w*)+"#, options: .regularExpression) { quoted.append(String(fix[r])) }
+        return quoted.allSatisfy { hay.contains($0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " ."))) }
+    }
+    static let plainCheck: [String: String] = [
+        "C8": "Something next to the main button competes with it.", "T3": "The page shows no real product screenshot or person.", "T2": "The page shows no named proof such as customer logos.",
+        "E9": "Some text is very small.", "E10": "The body text is small.", "E4": "The screen shows a lot of words.", "E7": "Some text sits on a gradient or photo.",
+        "E6": "Many boxed panels crowd the screen.", "E1": "Too many text sizes are in use.", "E5": "Some lines of text run long.", "C6": "The headline does not say plainly what the product does.",
+        "C7": "Some links or buttons do not look clickable.", "C9": "Some button labels are generic.", "C1": "More than one button competes as the main action.", "h_one_cta": "More than one button competes as the main action.",
+        "h_emphasis": "Too many items shout for attention at once.", "h_cta_fold": "The main button sits low on the screen.", "h_first": "The eye does not land on the headline first.",
+        "h_scale": "The headline is not much bigger than the text under it.", "c_aa": "Some text is hard to read against its background.", "T5": "Ad-like items clutter the page.",
+        "h_nav_quiet": "The navigation is as loud as the headline.", "C3": "The main button is not visible without scrolling.", "C10": "The sentences run long."]
+    /// The Fix is the vetted rubric sentence of the heaviest failed check on the meter, or nothing. Designer-only deductions get no Fix.
+    static func rubricFix(failed: [Check], score: Int, meter: String) -> String {
+        if score >= 100 || meter == "balance" { return "" }
+        guard let top = failed.max(by: { $0.w < $1.w }) else { return "" }
+        let f = clean(top.fix)
+        return f.isEmpty || bannedFix(f) || unsafeSubmitAdvice(f) ? "" : f
+    }
     static func fallbackFix(meter k: String, failed: [Check]) -> String {
-        if let f = failed.first { return clean(f.fix) }
-        if k == "balance" { return "Move weight toward the empty side so the page feels even." }
-        if k == "grouping" { return "Put less space inside each group than between groups, and give each group one card or one shared edge." }
-        return "Review this against its checklist."
+        if let f = failed.first(where: { !navCountIDs.contains($0.id) }) { let x = clean(f.fix); return bannedFix(x) || unsafeSubmitAdvice(x) ? "" : x }
+        return ""
     }
 
     /// After the label calls all failed: asks each key once whether it is the keys that are at fault, not the reply.
@@ -239,7 +346,7 @@ public struct Pipeline {
         let primary = Self.primaryID(vision, count: boxes.count).flatMap { id in px0.map { Contrast.isFilled($0, box: boxes[id]) } ?? true ? id : nil }
         if let pid = primary {
             let b = boxes[pid]
-            if case .object(var o) = vision { o["primary_y_pct"] = .number((b.y + b.h / 2) / Double(full.height) * 100); vision = .object(o) }
+            if case .object(var o) = vision { o["primary_y_pct"] = .number((b.y + b.h / 2) / Double(full.height) * 100); o["primary_y_pt"] = .number((b.y + b.h / 2) / max(1, screenScale)); vision = .object(o) }
         }
         let scaled = boxes
 
@@ -274,6 +381,7 @@ public struct Pipeline {
         // Balance and Alignment: pixels and OCR boxes only.
         let layoutMeters = Layout.meters(pixels: pixels, boxes: scaled, imageWidth: full.width)
         stages.emit(meters: layoutMeters, ready: Set(layoutMeters.keys))
+        let lp = Layout.problems(pixels: pixels, boxes: scaled, imageWidth: full.width)
         // Text fill-in starts now, in parallel with Jev. It sees every check answered so far; Jev-only checks come later.
         let provisional: [String: Any] = {
             var sc: [String: Any] = [:]
@@ -284,7 +392,6 @@ public struct Pipeline {
                 let known = cs.filter { codeAns[$0.id] != nil }.reduce(0) { $0 + $1.w }
                 sc[m] = ["score": known == 0 ? 0 : Int((Double(got) / Double(known) * 100).rounded()), "failed": Array(failed)]
             }
-            let lp = Layout.problems(pixels: pixels, boxes: scaled, imageWidth: full.width)
             for (k, v) in layoutMeters { sc[k] = ["score": v.score, "failed": lp[k] ?? [String]()] }
             if let rd { sc["reading"] = ["grade": rd.grade, "score": Int((Self.gradePoints(rd.grade) * 10).rounded())] }
             let bad = code.contrast.boxes.filter { !$0.pass && $0.ratio != nil }.prefix(2).map { "\(Self.truncate($0.text, max: 24)) \(String(format: "%.1f", $0.ratio!)):1" }
@@ -295,17 +402,11 @@ public struct Pipeline {
             if let rd { f["reading_facts"] = Readability.hardest(paras: Readability.countedParagraphs(scaled, imageHeight: full.height)).merging(["grade": rd.grade, "capped": rd.capped]) { a, _ in a } }
             return f
         }()
-        let writeStart = Date()
-        let writeTask = Task<JSONValue?, Never> {
-            guard let data = try? JSONSerialization.data(withJSONObject: provisional), let str = String(data: data, encoding: .utf8) else { return nil }
-            return try? await Claude.call(keys: key, system: Prompts.write, content: [["type": "text", "text": str]], maxTokens: 900).json
-        }
-
         // Jev: only the checks code could not answer.
         var state: [String: JSONValue] = [:]
         if case .object(let o) = vision { state = o }
         // Free text from the model (name, description, role ids) wobbles between runs and would sway Jev's answers.
-        for k in ["roles", "visual_description", "page_name", "primary_y_pct", "heaviest_weight", "logo_position", "main_text_alignment", "real_imagery", "text_on_busy_bg"] { state[k] = nil }
+        for k in ["roles", "visual_description", "page_name", "primary_y_pct", "primary_y_pt", "heaviest_weight", "logo_position", "main_text_alignment", "real_imagery", "text_on_busy_bg"] { state[k] = nil }
         state["all_copy"] = .string(facts.allCopy)
         state["text_box_count"] = .number(Double(facts.boxes.count))
         let c6 = await c6Task.value
@@ -376,9 +477,24 @@ public struct Pipeline {
         if useCache, let h = hash { Pipeline.store(result, hash: h, dir: cacheDir) }
         onScores?(result)
 
-        let w = await writeTask.value
+        // The writer sees the FINAL blended scores, the failed checks (code and Jev) and the designer's deduction.
+        let writeStart = Date()
+        var wf = provisional
+        var sc = (wf["meters"] as? [String: Any]) ?? [:]
+        var failedQ: [String: [String]] = [:]
+        for k in Meters.order where k != "reading" {
+            failedQ[k] = Rubric.checks(for: k).filter { c in !Self.navCountIDs.contains(c.id) }.filter { c in result.meters[k]?.checks.first { $0.id == c.id }?.yes == false }.prefix(3).map { $0.q }
+        }
+        for (k, v) in lp { failedQ[k] = v }
+        for (k, v) in Pipeline.writerMeterFacts(meters: result.meters.filter { $0.value.applicable != false }, failed: failedQ, designerReason: designer?.reason) { sc[k] = v }
+        wf["meters"] = sc
+        wf["feeling_facts"] = Self.feelingFacts(stats: stats, copy: facts.allCopy)
+        let w: JSONValue? = await {
+            guard let data = try? JSONSerialization.data(withJSONObject: wf), let str = String(data: data, encoding: .utf8) else { return nil }
+            return try? await Claude.call(keys: key, system: Prompts.write, content: [["type": "text", "text": str]], maxTokens: 900).json
+        }()
         T.write = Date().timeIntervalSince(writeStart) * 1000
-        result.text = Self.texts(for: result, written: w)
+        result.text = Self.texts(for: result, written: w, pageText: facts.allCopy)
         T.total = Date().timeIntervalSince(t0) * 1000
         result.timings = T
         if useCache, let h = hash { Pipeline.store(result, hash: h, dir: cacheDir) }
@@ -398,23 +514,28 @@ public struct Pipeline {
     }
 
     /// Tooltip text for every meter from the writer's reply (nil reply gives the fallback fixes and empty why lines).
-    static func texts(for r: RunResult, written w: JSONValue?) -> [String: MeterText] {
+    static func texts(for r: RunResult, written w: JSONValue?, pageText: String = "") -> [String: MeterText] {
         var out: [String: MeterText] = [:]
+        // The designer's one reason belongs to the lowest designer meter only.
+        let owner = Meters.order.filter { r.meters[$0]?.applicable != false && (r.meters[$0]?.designer ?? 101) <= 90 }.min { (r.meters[$0]!.designer!) < (r.meters[$1]!.designer!) }
         for k in Meters.order {
             let score = k == "reading" ? Int((r.readingGrade.map { gradePoints($0) * 10 } ?? 100).rounded()) : (r.meters[k]?.score ?? 0)
             let failed = Rubric.checks(for: k).filter { c in r.meters[k]?.checks.first { $0.id == c.id }?.yes == false }
             let arr = w?[k].array ?? []
-            let why = clean(arr.count > 0 ? (arr[0].string ?? "") : "")
-            let fix = clean(arr.count > 1 ? (arr[1].string ?? "") : "")
+            var why = cleanWhy(clean(arr.count > 0 ? (arr[0].string ?? "") : ""), meter: k)
+            let hasDeduction = !failed.isEmpty || (r.meters[k]?.designer.map { $0 < 100 } ?? false)
+            let navOnly = !failed.isEmpty && failed.allSatisfy { navCountIDs.contains($0.id) }
+            let dr = k == owner ? (r.designerReason ?? "") : ""
+            let dedMain = !dr.isEmpty
+            if score >= 100 { why = "" }
+            else if why.isEmpty || navOnly && !dedMain { why = fallbackWhy(score: score, failed: navOnly ? [] : failed, designer: r.meters[k]?.designer, designerReason: dr, meter: k) }
+            else if dedMain, !why.lowercased().contains("designer") {
+                let d = fallbackWhy(score: score, failed: [], designer: r.meters[k]?.designer, designerReason: dr, meter: k)
+                if !d.isEmpty, !d.hasPrefix(genericWhyPrefix), !why.contains(d) { why = why.hasSuffix(".") ? why + " " + d : why + ". " + d }
+            }
             let problem = (arr.count > 2 ? (arr[2].bool ?? false) : false) || (k == "reading" && score < 85)
             if r.meters[k]?.applicable == false { out[k] = MeterText(why: "This doesn't apply to this kind of screen.", fix: ""); continue }
-            out[k] = MeterText(why: why, fix: finalFix(fix, score: score, problem: problem, failed: failed, meter: k))
-        }
-        // The designer's main reason joins the Why line of the meter they rated lowest, when it still fits.
-        if let reason = r.designerReason, !reason.isEmpty,
-           let low = Designer.meters.filter({ r.meters[$0]?.designer != nil }).min(by: { r.meters[$0]!.designer! < r.meters[$1]!.designer! }),
-           let t = out[low], !t.why.isEmpty, t.why.count + reason.count < 200 {
-            out[low]?.why = t.why + " " + reason
+            out[k] = MeterText(why: why, fix: rubricFix(failed: failed, score: score, meter: k))
         }
         // Valence and Intensity are positions, not scores: a reason only. Reading gets a fix only above grade 9.
         for k in ["valence", "intensity"] {
@@ -430,7 +551,7 @@ public struct Pipeline {
         var r = stored
         var sc: [String: Any] = [:]
         for k in Meters.order {
-            let failed = Rubric.checks(for: k).filter { c in r.meters[k]?.checks.first { $0.id == c.id }?.yes == false }.prefix(3).map { $0.q }
+            let failed = Rubric.checks(for: k).filter { c in !Self.navCountIDs.contains(c.id) }.filter { c in r.meters[k]?.checks.first { $0.id == c.id }?.yes == false }.prefix(3).map { $0.q }
             if k == "reading" { sc[k] = ["grade": r.readingGrade ?? 0, "score": Int(((r.readingGrade.map { Self.gradePoints($0) * 10 }) ?? 100).rounded())]; continue }
             sc[k] = ["score": r.meters[k]?.score ?? 0, "failed": Array(failed)]
         }
@@ -445,13 +566,24 @@ public struct Pipeline {
         return r
     }
 
-    /// "Nothing to fix" only when the score is 85+ and the WHY line names no problem.
-    public static func finalFix(_ fix: String, score: Int, problem: Bool, failed: [Check], meter: String) -> String {
-        if score >= 100 { return "" }
+    /// Advice to move a submit / sign-in / primary button up, above or beside its fields. A senior designer never gives it:
+    /// the action belongs below the fields it submits.
+    static func unsafeSubmitAdvice(_ fix: String) -> Bool {
+        let f = fix.lowercased()
+        guard f.range(of: #"\b(button|submit|sign in|sign-in|log in|cta)\b"#, options: .regularExpression) != nil else { return false }
+        // Only a position move counts; "raise the button contrast above 4.5:1" is a contrast fix.
+        if f.range(of: #"\b(contrast|colou?rs?|size|label|text|font|padding|radius)\b"#, options: .regularExpression) != nil { return false }
+        return f.range(of: #"\b(move|put|place|bring|shift|raise|lift)\b[^.]*\b(up|higher|upper|above|top|beside|near|next to)\b"#, options: .regularExpression) != nil
+    }
+
+    /// No Fix when the score is 100, or 85+ and the WHY line names no problem; a lower score always gets one.
+    public static func finalFix(_ fix: String, score: Int, problem: Bool, failed: [Check], meter: String, hasDeduction: Bool = true) -> String {
+        if score >= 100 || !hasDeduction || meter == "balance" { return "" }
         let none = fix.isEmpty || fix.lowercased().hasPrefix("nothing to fix")
-        if score >= 85 && !problem { return "Nothing to fix" }
+        if fix.lowercased().hasPrefix("nothing to fix") && !problem { return "" }
+        if score >= 85 && !problem { return "" }
         if none { return fallbackFix(meter: meter, failed: failed) }
-        return fix
+        return bannedFix(fix) || unsafeSubmitAdvice(fix) ? "" : fix
     }
 
     /// Reading points (0-10): grade 9 or lower = 10 (WCAG 3.1.5), falling linearly to 0 at grade 12 and above.

@@ -5,6 +5,7 @@ public enum Feeling {
         var s = 50
         for r in results where r.yes {
             guard let c = checks.first(where: { $0.id == r.id }) else { continue }
+            guard c.pushes == "high" || c.pushes == "low" else { continue }
             s += c.pushes == "high" ? c.w : -c.w
         }
         return min(100, max(0, s))

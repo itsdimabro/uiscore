@@ -72,7 +72,7 @@ final class CoreTests: XCTestCase {
     }
     func testNothingToFixRule() {
         let c = Rubric.checks(for: "ease")
-        XCTAssertEqual(Pipeline.finalFix("", score: 90, problem: false, failed: c, meter: "ease"), "Nothing to fix")
+        XCTAssertEqual(Pipeline.finalFix("", score: 90, problem: false, failed: c, meter: "ease"), "")
         XCTAssertNotEqual(Pipeline.finalFix("Nothing to fix", score: 90, problem: true, failed: c, meter: "ease"), "Nothing to fix")
         XCTAssertNotEqual(Pipeline.finalFix("Nothing to fix", score: 70, problem: false, failed: c, meter: "ease"), "Nothing to fix")
         XCTAssertEqual(Pipeline.finalFix("Cut the text.", score: 60, problem: true, failed: c, meter: "ease"), "Cut the text.")
