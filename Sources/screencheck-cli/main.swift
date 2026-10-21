@@ -11,6 +11,14 @@ if args.contains("--layout") {
     print(String(data: try enc.encode({ let g = Layout.grouping(OCR.boxes(in: img), pixels: px, imageWidth: img.width); return Out(balance: Layout.balance(Layout.weightGrid(px)), grouping: g, score: Layout.groupingScore(g), checks: Dictionary(uniqueKeysWithValues: Layout.groupingChecks(g).compactMap { c in c.pass.map { (c.id, $0) } })) }()), encoding: .utf8)!)
     exit(0)
 }
+if args.contains("--detectors") {
+    guard let img = Contrast.load(URL(fileURLWithPath: path)), let px = Pixels(cgImage: img) else { exit(1) }
+    let sc = Contrast.screenScale(URL(fileURLWithPath: path), width: img.width)
+    var bx = OCR.boxes(in: img); if sc > 1 { for i in bx.indices { bx[i].fontPx /= sc } }
+    let enc = JSONEncoder(); enc.outputFormatting = [.sortedKeys]
+    print(String(data: try enc.encode(Detectors.measure(pixels: px, boxes: bx, scale: sc)), encoding: .utf8)!)
+    exit(0)
+}
 let keys = KeyStore.keys()
 if args.contains("--check-keys") {
     for (i, k) in keys.claude.enumerated() { print("Claude key \(i + 1): \(await KeyCheck.claude(k).plain("Claude"))") }
