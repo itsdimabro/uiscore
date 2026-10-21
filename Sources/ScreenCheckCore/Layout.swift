@@ -125,6 +125,8 @@ public struct GroupingMetrics: Codable, Equatable {
     public var separation: Double = 1       // median between-group gap / typical within-group gap
     public var regionShare: Double = 0      // share of boxes sitting on a non-page background
     public var regionAgreement: Double = 1  // share of region-holding groups whose boxes share one background
+    public var rhythmShare: Double = 1      // share of vertical gaps that fall on the 4 most common gap sizes (a small spacing scale)
+    public var rhythmGaps: Int = 0
     public var styleShare: Double = 1       // share of boxes matching their group's dominant size, weight and colour
     public var alignment = AlignmentMetrics()
     public init() {}
@@ -187,6 +189,20 @@ extension Layout {
                 return na != nc ? na < nc : a > c
             }!
             counted += mem.count; matching += mem.filter { sim($0, dom) }.count
+        }
+        // Spacing rhythm: gaps between consecutive lines/blocks of a stack should come from a small scale (Atlassian: 8 px base, limited token set).
+        var gaps: [Double] = []
+        let sorted = b.sorted { $0.y < $1.y }
+        for i in sorted.indices { for j in (i + 1)..<max(i + 1, sorted.count) {
+            let a = sorted[i], c = sorted[j]
+            if c.y <= a.y + a.h * 0.5 { continue }
+            if abs(c.x - a.x) < 8 || abs((c.x + c.w / 2) - (a.x + a.w / 2)) < 8 { let g = c.y - (a.y + a.h); if g >= 4 && g <= 160 { gaps.append(g) }; break }
+        } }
+        m.rhythmGaps = gaps.count
+        if gaps.count >= 6 {
+            let ids = clusterIndex(gaps, tol: 2)
+            var cnt: [Int: Int] = [:]; for i in ids { cnt[i, default: 0] += 1 }
+            m.rhythmShare = Double(cnt.values.sorted(by: >).prefix(4).reduce(0, +)) / Double(gaps.count)
         }
         m.styleShare = counted == 0 ? 1 : Double(matching) / Double(counted)
         // Common region: boxes whose own background differs from the page background; groups should sit on one region each.

@@ -52,9 +52,9 @@ scripts/make-app.sh   # builds dist/UIScore.app and dist/UIScore.zip
 Command line: `swift run screencheck-cli shot.png` with `ANTHROPIC_API_KEY` and `JEV_API_KEY` set.
 
 ## How scoring works
-Each meter is a set of yes/no checks drawn from design research. UIScore detects the page type first (for example SaaS app, store, landing page) so checks that do not apply are skipped. Code measures such as contrast ratios, spacing and text size run locally on the image.
+Each meter is a set of yes/no checks drawn from design research. UIScore detects the page type first (for example SaaS app, store, landing page) so checks that do not apply are skipped. Code measures such as contrast ratios, spacing and text size run locally on the image. Ease also checks that a screen uses at most two typefaces and one or two accent colours (NN/g, Pairing Typefaces and Using Color to Enhance Your Design). Text size is measured from the text's real height by letter shape, so small navigation text is no longer read as too small.
 
-Score tracks human appeal ratings at ρ ≈ 0.5 on 60 sites from Reinecke & Gajos, "Quantifying Visual Preferences Around the World" (2014).
+Score tracks human appeal ratings at ρ ≈ 0.40 on 60 sites (95% interval 0.15 to 0.62) from Reinecke & Gajos, "Quantifying Visual Preferences Around the World" (2014).
 
 ## License
 [MIT](LICENSE)

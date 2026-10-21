@@ -52,7 +52,15 @@ public enum Scoring {
         let c = content(boxes)
         guard !c.isEmpty else { return 0 }
         let med = c.map { $0.fontPx }.sorted()[c.count / 2]
-        return c.filter { $0.fontPx >= 1.4 * med }.count
+        let big = c.filter { $0.fontPx >= 1.4 * med }.sorted { $0.y < $1.y }
+        var n = 0
+        var prev: TextBox? = nil
+        for b in big {
+            // A headline wrapped over several lines is one emphasised element.
+            if let p = prev, b.y - (p.y + p.h) < p.h * 1.2, abs(b.fontPx - p.fontPx) <= p.fontPx * 0.25, abs((b.x + b.w / 2) - (p.x + p.w / 2)) < max(p.w, b.w) * 0.6 || abs(b.x - p.x) < 12 { prev = b; continue }
+            n += 1; prev = b
+        }
+        return n
     }
 
     /// Short labels stacked on one left edge (8+ of them): a menu or link list. Returns how many items sit in such columns.
@@ -94,16 +102,35 @@ public enum Scoring {
         return body.last?.fontPx
     }
 
+    /// WCAG 1.4.12: line spacing at least 1.5x the text size. Measured as the pitch between consecutive lines of the same left edge
+    /// and size (OCR boxes), accepting 1.4x for jitter. Nil when no paragraph of 2+ lines exists.
+    public static func lineSpacingRatio(_ boxes: [TextBox]) -> Double? {
+        let b = boxes.filter { !["demo", "logo", "nav", "button"].contains($0.role) && $0.text.count >= 15 }.sorted { ($0.x, $0.y) < ($1.x, $1.y) }
+        var ratios: [Double] = []
+        for i in b.indices { for j in b.indices where j != i {
+            let a = b[i], c = b[j]
+            let pitch = (c.y + c.h / 2) - (a.y + a.h / 2)
+            guard pitch > 0, pitch < a.h * 2.6, abs(c.x - a.x) < 8 || abs((c.x + c.w / 2) - (a.x + a.w / 2)) < 8, abs(a.h - c.h) < a.h * 0.25 else { continue }
+            ratios.append(pitch / a.fontPx); break
+        } }
+        guard ratios.count >= 2 else { return nil }
+        return ratios.sorted()[ratios.count / 2]
+    }
+    static func lineSpacingOK(_ boxes: [TextBox]) -> Bool { (lineSpacingRatio(boxes) ?? 9) >= 1.4 }
+
     /// Answers every code-kind check. Returns id -> yes, plus contrast detail.
     public static func codeAnswers(_ f: PageFacts, pixels: Pixels?, appScreen: Bool = false) -> (answers: [String: Bool], contrast: ContrastReport, note: String?) {
         var a: [String: Bool] = [:]
         let sizes = distinctSizes(f.boxes)
+        let pageSizes = distinctSizes(content(f.boxes))   // product mockups and logos are artwork, not the page type scale
         a["h_scale"] = sizes.count >= 2 ? sizes[0] / sizes[1] >= 1.2 : false
-                a["E1"] = !sizes.isEmpty && sizes.count <= 6
+                a["E1"] = !pageSizes.isEmpty && pageSizes.count <= 6
         let words = Readability.splitWords(f.allCopy).count
         a["E4"] = words <= 120
         a["E5"] = (f.boxes.map { $0.text.count }.max() ?? 0) <= 80
-        a["E9"] = (f.boxes.map { $0.fontPx }.min() ?? 0) >= 12
+        let readable = content(f.boxes).filter { $0.text.filter { $0.isLetter }.count >= 3 }
+        let chars = readable.reduce(0) { $0 + $1.text.count }
+        a["E9"] = chars == 0 || Double(readable.filter { $0.fontPx < 11.5 }.reduce(0) { $0 + $1.text.count }) / Double(chars) <= 0.05
         a["E10"] = bodyTextPx(f.boxes).map { $0 >= (appScreen ? 13 : 16) } ?? false
         a["C4"] = f.navCount <= 7
         a["C5"] = f.options <= 15
@@ -115,7 +142,7 @@ public enum Scoring {
         // Logos and product-mockup/decorative text are artwork, not page copy. A role label can only remove a box from
         // this meter, never add one, so a flipped label moves the score by at most that one box.
         // Rotated or curved text (very tall box for few characters) is decorative and cannot be measured reliably.
-        let cb = f.boxes.filter { !["demo", "logo"].contains($0.role) && $0.w / max(1, $0.h) / Double(max(1, $0.text.count)) >= 0.2 }
+        let cb = f.boxes.filter { !["demo", "logo"].contains($0.role) && $0.text.filter { $0.isLetter }.count >= 3 && $0.w / max(1, $0.h) / Double(max(1, $0.text.count)) >= 0.2 }
         let rep = Contrast.report(pixels, boxes: cb, expected: cb.count)
         let measuredBoxes = rep.boxes.filter { $0.ratio != nil }
         let mIdx = rep.boxes.indices.filter { rep.boxes[$0].ratio != nil }
@@ -193,7 +220,7 @@ public enum Scoring {
         a["f_navcount"] = f.navCount <= 7
         // Geometry: a search/log-in/sign-up/cart label inside the top-right quarter of the page (top 12%).
         let H = Double(f.imageHeight ?? 800), Wd = f.allBoxes.map { $0.x + $0.w }.max() ?? 1280
-        a["f_topright"] = f.allBoxes.contains { $0.y < H * 0.12 && $0.x + $0.w / 2 >= Wd * 0.72 && has($0.text, ["search", "log in", "login", "sign in", "sign up", "cart", "basket", "account", "contact sales", "get started"]) }
+        a["f_topright"] = (f.vision["top_right_control"].bool ?? false) || f.allBoxes.contains { $0.y < H * 0.12 && $0.x + $0.w / 2 >= Wd * 0.72 && has($0.text, ["search", "log in", "login", "sign in", "sign up", "cart", "basket", "account", "contact sales", "get started"]) }
         a["f_pattern"] = flag("follows_page_type_pattern", true)
         a["f_links"] = flag("links_look_clickable", true)
         a["f_odd"] = !flag("has_unusual_pattern", false)
@@ -210,6 +237,8 @@ public enum Scoring {
         a["T2"] = flag("has_proof", false)
         a["T3"] = flag("real_imagery", false)
         a["T5"] = !flag("has_overlay", false) && !promo
+        a["E12"] = word("fonts") != "three_plus"
+        a["E13"] = word("accent_colors") != "three_plus"
         a["T9"] = !flag("has_dated_cues", false) && !flag("has_layout_error", false) && flag("images_ok", true)
         a["T7"] = !flag("has_inconsistent_style", false)
         a["T6"] = !flag("has_layout_error", false)

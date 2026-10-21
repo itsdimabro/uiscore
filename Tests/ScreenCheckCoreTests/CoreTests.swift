@@ -316,3 +316,20 @@ final class CoreTests: XCTestCase {
         XCTAssertTrue(r.textComplete)
     }
 }
+
+final class CoverageTests: XCTestCase {
+    func testLineSpacingRatioMeasuresPitch() {
+        func b(_ y: Double) -> TextBox { TextBox(text: "a line of body text here", x: 40, y: y, w: 300, h: 16, fontPx: 16, bold: false, role: "body", onImage: false) }
+        let r = Scoring.lineSpacingRatio([b(0), b(24), b(48), b(72)])
+        XCTAssertEqual(r ?? 0, 1.5, accuracy: 0.05)
+    }
+    func testWrappedHeadlineCountsOnce() {
+        func b(_ t: String, _ y: Double, _ px: Double) -> TextBox { TextBox(text: t, x: 100, y: y, w: 500, h: px, fontPx: px, bold: false, role: "body", onImage: false) }
+        var boxes = [b("Your shortcut to", 100, 60), b("everything.", 170, 60)]
+        for i in 0..<6 { boxes.append(b("small body copy line", 300 + Double(i) * 30, 16)) }
+        XCTAssertEqual(Scoring.emphasisCount(boxes), 1)
+    }
+    func testNewIconChecksExistAndWeightsSum() {
+        for id in ["E12", "E13"] { XCTAssertTrue(Rubric.checks.contains { $0.id == id }, id) }
+    }
+}

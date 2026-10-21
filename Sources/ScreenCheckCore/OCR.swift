@@ -55,10 +55,17 @@ public enum OCR {
             let w = b.width * W, h = b.height * H
             let top = (1 - b.maxY) * H
             if edge && (top < 3 || top + h > H - 3 || b.minX * W < 3 || b.maxX * W > W - 3) { continue }
-            out.append(TextBox(text: t, x: b.minX * W + dx, y: top + dy, w: w, h: h, fontPx: h * 0.85,
+            out.append(TextBox(text: t, x: b.minX * W + dx, y: top + dy, w: w, h: h, fontPx: fontSize(height: h, text: t),
                                bold: false, role: "body", onImage: false))
         }
         return out
+    }
+
+    /// Font size in px from a line's box height. Calibrated on Chromium renders of 12-24 px Inter: a line with a capital, digit,
+    /// ascender or descender is about 1.0x the font size tall; a line of x-height letters only (e.g. "nearness more sun") is about 0.75x.
+    static func fontSize(height h: Double, text: String) -> Double {
+        let tall = text.contains { $0.isUppercase || $0.isNumber || "bdfhijklgpqty".contains($0) }
+        return tall ? h : h * 1.3
     }
 
     /// Applies the model's role labels (by box index). Unlisted boxes stay "body".

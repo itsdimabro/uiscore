@@ -69,7 +69,10 @@ public enum Contrast {
         let dark = sig[iMin].c, light = sig[iMax].c
         let r = ratio(dark, light)
         if r < 1.05 { return nil }
-        let bg = sig.max(by: { $0.n < $1.n })!.c
+        let bgN = sig.max(by: { $0.n < $1.n })!
+        let bg = bgN.c
+        // Text sits on one dominant surface; if no colour holds half the box, the box straddles a gradient or artwork.
+        if Double(bgN.n) < Double(total) * 0.5 { return nil }
         let cols = sig.map { $0.c }
         // Ink = clusters clearly different from the background and not an anti-aliased blend of two others.
         // Only colors holding a real share of the ink are text colors: a small icon, bullet dot or logo mark inside

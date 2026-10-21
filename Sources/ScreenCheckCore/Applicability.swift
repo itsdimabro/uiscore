@@ -98,6 +98,8 @@ public enum Applicability {
         if f.navCount == 0 { na.formUnion(["h_nav_quiet", "f_nav", "f_navcount", "C4"]) }
         if f.primaryCount == 0 { na.formUnion(["C2", "C3", "C8", "h_cta_fold"]) }
         if f.options == 0 { na.formUnion(["C7", "f_links"]) }
+        if f.vision["fonts"].string == nil { na.insert("E12") }
+        if f.vision["accent_colors"].string == nil { na.insert("E13") }
         if f.labels.isEmpty { na.formUnion(["f_words", "C9"]) }
         let words = Readability.splitWords(f.allCopy).count
         if words < 8 { na.formUnion(["T8", "T11", "T12", "T14", "T15", "C10"]) }
