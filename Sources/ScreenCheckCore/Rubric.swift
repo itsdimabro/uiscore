@@ -20,6 +20,6 @@ public enum Rubric {
     /// Display meters scored by yes/no checks, in card order.
     public static let meterKeys = ["order", "contrast", "familiar", "ease", "clarity", "trust"]
     /// Code-only meters, not in the rubric JSON (see Layout).
-    public static let layoutKeys = ["balance", "alignment"]
+    public static let layoutKeys = ["balance", "grouping"]
     public static let feelingKeys = ["vv", "vi", "cv", "ci"]
 }

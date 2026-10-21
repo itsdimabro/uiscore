@@ -7,7 +7,7 @@ struct Sections: View {
     var body: some View {
         VStack(spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
-                Panel(title: "Visual", stretch: true) { MeterColumn { ForEach(Meters.visual.filter { !(r.meters["first"] != nil && Rubric.layoutKeys.contains($0)) }, id: \.self) { MeterRow(m: m, r: r, k: $0, right: false) } } }.lifted(m, Meters.visual).modifier(Stagger(i: 0, on: m.shown))
+                Panel(title: "Visual", stretch: true) { MeterColumn { ForEach(Meters.visual.filter { !(r.meters["first"] != nil && Rubric.layoutKeys.contains($0)) && !($0 == "grouping" && r.meters["alignment"] != nil && r.meters["grouping"] == nil) }, id: \.self) { MeterRow(m: m, r: r, k: $0, right: false) } } }.lifted(m, Meters.visual).modifier(Stagger(i: 0, on: m.shown))
                 Panel(title: "Visual + Copy", stretch: true) { MeterColumn { ForEach(Meters.visualCopy, id: \.self) { MeterRow(m: m, r: r, k: $0, right: true) } } }.lifted(m, Meters.visualCopy).modifier(Stagger(i: 1, on: m.shown))
             }.fixedSize(horizontal: false, vertical: true).zIndex(2)
             HStack(alignment: .top, spacing: 10) {

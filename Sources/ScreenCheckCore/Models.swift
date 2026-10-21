@@ -54,7 +54,7 @@ public struct RunResult: Codable, Identifiable {
     public var pageName: String
     public var imageWidth: Int
     public var imageHeight: Int
-    public var meters: [String: MeterResult]       // contrast, balance, alignment, order, familiar, ease, clarity, trust
+    public var meters: [String: MeterResult]       // contrast, grouping, balance, order, familiar, ease, clarity, trust
     public var feeling: [String: Int]              // vv vi cv ci (0-100)
     public var feelingLow: [String: Bool]          // v / a
     public var feelingConfidencePct: [String: Int]
@@ -80,8 +80,9 @@ extension RunResult {
     public var textComplete: Bool {
         guard !text.isEmpty, !Pipeline.isTruncated(self) else { return false }
         // Runs saved before Balance and Alignment have a "first" meter and no such rows; their text is complete without them.
+        // Runs saved before Grouping have "alignment" instead and no grouping row.
         let legacy = meters["first"] != nil
-        return Meters.order.filter { !(legacy && Rubric.layoutKeys.contains($0)) }.allSatisfy { k in text[k].map { !$0.why.isEmpty } ?? false }
+        return Meters.order.filter { !((legacy && Rubric.layoutKeys.contains($0)) || ($0 == "grouping" && meters["alignment"] != nil)) }.allSatisfy { k in text[k].map { !$0.why.isEmpty } ?? false }
     }
 }
 
@@ -118,18 +119,18 @@ public struct BoxContrast: Codable {
 
 public enum Meters {
     public static let names: [String: String] = [
-        "order": "Hierarchy", "balance": "Balance", "alignment": "Alignment", "contrast": "Contrast", "familiar": "Familiarity",
+        "order": "Hierarchy", "balance": "Balance", "grouping": "Grouping", "contrast": "Contrast", "familiar": "Familiarity",
         "ease": "Ease", "clarity": "Clarity", "trust": "Trust", "reading": "Reading level",
     ]
     public static let order = visual + visualCopy + ["reading"]
     /// Perception order (Ware 2012 three stages; see evidence/fundamentals.md): features, then layout and grouping, then reading.
-    public static let visual = ["contrast", "balance", "alignment", "order"]
+    public static let visual = ["contrast", "grouping", "balance", "order"]
     public static let visualCopy = ["familiar", "ease", "clarity", "trust"]
     /// Every part of the card that fills in on its own while a run is going.
     public static let allReady: Set<String> = Set(order + ["feeling"])
     public static let definitions: [String: String] = [
         "balance": "Does the weight feel even?",
-        "alignment": "Do things line up?",
+        "grouping": "Do related things look grouped?",
         "order": "Is it clear what to look at first?",
         "contrast": "Is the text easy to see?",
         "familiar": "Does it look like similar sites?",

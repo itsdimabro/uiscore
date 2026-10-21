@@ -10,7 +10,7 @@ UIScore is a small Mac menu-bar app. Take a screenshot or copy any image, press 
 
 | Group | Meters |
 | --- | --- |
-| Visual | Contrast, Balance, Alignment, Hierarchy |
+| Visual | Contrast, Grouping, Balance, Hierarchy |
 | Visual + Copy | Familiarity, Ease, Clarity, Trust |
 | Copy | Reading grade, 1 to 12 |
 | Feeling | Valence, Intensity |

@@ -54,15 +54,6 @@ public enum Scoring {
         let med = c.map { $0.fontPx }.sorted()[c.count / 2]
         return c.filter { $0.fontPx >= 1.4 * med }.count
     }
-    /// Groups are clear when the biggest vertical gap between lines is at least twice the typical gap.
-    static func groupsClear(_ boxes: [TextBox]) -> Bool {
-        let c = content(boxes).sorted { $0.y < $1.y }
-        guard c.count >= 4 else { return true }
-        var gaps: [Double] = []
-        for i in 1..<c.count { gaps.append(max(0, c[i].y - (c[i - 1].y + c[i - 1].h))) }
-        let med = gaps.sorted()[gaps.count / 2]
-        return (gaps.max() ?? 0) >= max(2 * med, 6)
-    }
 
     /// Short labels stacked on one left edge (8+ of them): a menu or link list. Returns how many items sit in such columns.
     static func linkColumnCount(_ boxes: [TextBox]) -> Int {
@@ -195,7 +186,6 @@ public enum Scoring {
         a["h_first"] = Scoring.firstIsHeadline(f.boxes)
         a["h_one_cta"] = prim == "one"
         a["h_cta_fold"] = prim != "none" && (v["primary_y_pct"].double ?? 100) <= 60
-        a["h_groups"] = Scoring.groupsClear(f.boxes)
         a["h_nav_quiet"] = flag("nav_quieter_than_headline", true)
         a["h_emphasis"] = Scoring.emphasisCount(f.boxes) <= 3
         a["f_logo"] = ["top-left", "top-center"].contains(word("logo_position"))
@@ -207,7 +197,6 @@ public enum Scoring {
         a["f_pattern"] = flag("follows_page_type_pattern", true)
         a["f_links"] = flag("links_look_clickable", true)
         a["f_odd"] = !flag("has_unusual_pattern", false)
-        a["E3"] = Scoring.groupsClear(f.boxes)
         a["E6"] = word("panels") != "many"
         a["E7"] = f.unmeasuredShare <= 0.12
         a["C1"] = prim == "one"

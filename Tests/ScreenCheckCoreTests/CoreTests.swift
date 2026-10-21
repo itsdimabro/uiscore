@@ -291,6 +291,24 @@ final class CoreTests: XCTestCase {
         }
     }
 
+    func testGroupingSeparatesGroupsAndKeepsLegacyAlignmentRuns() {
+        func box(_ y: Double, _ x: Double = 40) -> TextBox { TextBox(text: "word", x: x, y: y, w: 200, h: 16, fontPx: 16, bold: false, role: "body", onImage: false) }
+        let tight = [0.0, 22, 44, 66, 200, 222, 244, 266].map { box($0) }   // two stacks, 134 px apart vs 6 px gaps
+        let g = Layout.grouping(tight, pixels: nil, imageWidth: 800)
+        XCTAssertEqual(g.groups, 2)
+        XCTAssertGreaterThanOrEqual(g.separation, 1.5)
+        XCTAssertEqual(Layout.groupingChecks(g).first { $0.id == "g_prox" }?.pass, true)
+        XCTAssertNil(Layout.groupingChecks(g).first { $0.id == "g_region" }?.pass)   // no pixels: region not applicable
+        XCTAssertEqual(Layout.groupingChecks(g).reduce(0) { $0 + $1.weight }, 100)
+        let even = (0..<8).map { box(Double($0) * 22) }                             // one even column: no between-group gap
+        XCTAssertEqual(Layout.grouping(even, pixels: nil, imageWidth: 800).groups, 1)
+        XCTAssertEqual(Layout.groupingScore(g), Layout.groupingScore(Layout.grouping(tight, pixels: nil, imageWidth: 800)))
+        var r = RunResult.placeholder
+        r.meters = ["alignment": MeterResult(score: 50, lowConfidence: false, confidencePct: 90, checks: [])]
+        for k in Meters.order where k != "grouping" { r.text[k] = MeterText(why: "ok", fix: "") }
+        r.text["alignment"] = MeterText(why: "ok", fix: "")
+        XCTAssertTrue(r.textComplete)
+    }
     func testLegacyFirstMeterRunStillComplete() {
         var r = RunResult.placeholder
         r.meters = ["first": MeterResult(score: 50, lowConfidence: false, confidencePct: 90, checks: [])]

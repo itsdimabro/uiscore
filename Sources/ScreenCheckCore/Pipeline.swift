@@ -142,7 +142,7 @@ public struct Pipeline {
     static func fallbackFix(meter k: String, failed: [Check]) -> String {
         if let f = failed.first { return clean(f.fix) }
         if k == "balance" { return "Move weight toward the empty side so the page feels even." }
-        if k == "alignment" { return "Snap text to fewer shared left edges and repeat the same gaps." }
+        if k == "grouping" { return "Put less space inside each group than between groups, and give each group one card or one shared edge." }
         return "Review this against its checklist."
     }
 

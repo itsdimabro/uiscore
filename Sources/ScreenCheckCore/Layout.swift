@@ -117,6 +117,134 @@ public enum Layout {
     }
 }
 
+public struct GroupingMetrics: Codable, Equatable {
+    public var boxes: Int = 0
+    public var groups: Int = 0              // clusters after cutting gaps of 1.5x the typical gap or more
+    public var groupedShare: Double = 0     // share of boxes inside a group of 2+ boxes
+    public var ambiguousShare: Double = 0   // share of gaps between 1.2x and 1.5x the typical gap (neither within nor between)
+    public var separation: Double = 1       // median between-group gap / typical within-group gap
+    public var regionShare: Double = 0      // share of boxes sitting on a non-page background
+    public var regionAgreement: Double = 1  // share of region-holding groups whose boxes share one background
+    public var styleShare: Double = 1       // share of boxes matching their group's dominant size, weight and colour
+    public var alignment = AlignmentMetrics()
+    public init() {}
+}
+
+extension Layout {
+    static func edgeGap(_ a: TextBox, _ b: TextBox) -> Double {
+        let dx = max(0, max(a.x, b.x) - min(a.x + a.w, b.x + b.w)), dy = max(0, max(a.y, b.y) - min(a.y + a.h, b.y + b.h))
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
+    /// Gestalt grouping cues from OCR boxes and pixels: proximity (Wertheimer 1923; Kubovy 1998 ratio 1.5), common region (Palmer 1992),
+    /// similarity, and the shared lines of `alignment`. Deterministic: same boxes and pixels, same numbers.
+    public static func grouping(_ all: [TextBox], pixels: Pixels?, imageWidth: Int) -> GroupingMetrics {
+        var m = GroupingMetrics()
+        let b = all.filter { $0.h >= 6 && $0.w >= 8 }
+        m.boxes = b.count
+        m.alignment = alignment(b, imageWidth: imageWidth)
+        guard b.count >= 2 else { return m }
+        // Minimum spanning tree edges (Prim); its gaps are the single-linkage grouping gaps.
+        var inTree = [Bool](repeating: false, count: b.count), best = [Double](repeating: .infinity, count: b.count), from = [Int](repeating: -1, count: b.count)
+        best[0] = 0
+        var edges: [(Int, Int, Double)] = []
+        for _ in 0..<b.count {
+            var u = -1
+            for i in b.indices where !inTree[i] && (u < 0 || best[i] < best[u]) { u = i }
+            inTree[u] = true
+            if from[u] >= 0 { edges.append((from[u], u, best[u])) }
+            for v in b.indices where !inTree[v] { let g = edgeGap(b[u], b[v]); if g < best[v] { best[v] = g; from[v] = u } }
+        }
+        let med = max(4, edges.map { $0.2 }.sorted()[edges.count / 2])
+        var parent = Array(b.indices)
+        func find(_ x: Int) -> Int { var x = x; while parent[x] != x { parent[x] = parent[parent[x]]; x = parent[x] }; return x }
+        for e in edges where e.2 < 1.5 * med { parent[find(e.0)] = find(e.1) }
+        let ids = b.indices.map { find($0) }
+        var members: [Int: [Int]] = [:]
+        for i in b.indices { members[ids[i], default: []].append(i) }
+        m.groups = members.count
+        m.groupedShare = Double(members.values.filter { $0.count >= 2 }.reduce(0) { $0 + $1.count }) / Double(b.count)
+        m.ambiguousShare = Double(edges.filter { $0.2 >= 1.2 * med && $0.2 < 1.5 * med }.count) / Double(edges.count)
+        var between: [Double] = []
+        for (id, mem) in members {
+            var nearest = Double.infinity
+            for i in mem { for j in b.indices where ids[j] != id { nearest = min(nearest, edgeGap(b[i], b[j])) } }
+            if nearest.isFinite { between.append(nearest) }
+        }
+        m.separation = between.isEmpty ? 1 : between.sorted()[between.count / 2] / med
+        // Similarity: size within 20%, same weight, colour within 80 (RGB distance) of the group's dominant style.
+        var fg: [Int: (Int, Int, Int)] = [:], bgc: [Int: (Int, Int, Int)] = [:]
+        if let px = pixels { for i in b.indices { if let s = Contrast.clusterSample(px, box: b[i]) { fg[i] = s.fg; bgc[i] = s.bg } } }
+        func close(_ p: (Int, Int, Int), _ q: (Int, Int, Int)) -> Bool { abs(p.0 - q.0) + abs(p.1 - q.1) + abs(p.2 - q.2) <= 80 }
+        var matching = 0, counted = 0
+        for mem in members.values where mem.count >= 2 {
+            func sim(_ i: Int, _ j: Int) -> Bool {
+                let r = b[i].fontPx / max(1, b[j].fontPx)
+                return r >= 0.8 && r <= 1.25 && b[i].bold == b[j].bold && (fg[i] == nil || fg[j] == nil || close(fg[i]!, fg[j]!))
+            }
+            let dom = mem.max { a, c in
+                let na = mem.filter { sim($0, a) }.count, nc = mem.filter { sim($0, c) }.count
+                return na != nc ? na < nc : a > c
+            }!
+            counted += mem.count; matching += mem.filter { sim($0, dom) }.count
+        }
+        m.styleShare = counted == 0 ? 1 : Double(matching) / Double(counted)
+        // Common region: boxes whose own background differs from the page background; groups should sit on one region each.
+        if let px = pixels, !bgc.isEmpty {
+            let page = pageBackground(px)
+            func off(_ i: Int) -> Bool { guard let c = bgc[i] else { return false }; return abs(c.0 - page.0) + abs(c.1 - page.1) + abs(c.2 - page.2) > 24 }
+            m.regionShare = Double(bgc.keys.filter { off($0) }.count) / Double(b.count)
+            var holders = 0, agree = 0
+            for mem in members.values {
+                let known = mem.filter { bgc[$0] != nil }
+                guard known.contains(where: off) else { continue }
+                holders += 1
+                let first = bgc[known[0]]!
+                if known.allSatisfy({ abs(bgc[$0]!.0 - first.0) + abs(bgc[$0]!.1 - first.1) + abs(bgc[$0]!.2 - first.2) <= 24 }) { agree += 1 }
+            }
+            m.regionAgreement = holders == 0 ? 1 : Double(agree) / Double(holders)
+        }
+        return m
+    }
+
+    static func pageBackground(_ px: Pixels) -> (Int, Int, Int) {
+        var counts: [Int: (n: Int, r: Int, g: Int, b: Int)] = [:]
+        for y in stride(from: 0, to: px.height, by: 4) { for x in stride(from: 0, to: px.width, by: 4) {
+            let i = (y * px.width + x) * 4
+            let r = Int(px.data[i]), g = Int(px.data[i + 1]), bl = Int(px.data[i + 2])
+            let k = (r >> 3) << 10 | (g >> 3) << 5 | (bl >> 3)
+            let e = counts[k] ?? (0, 0, 0, 0)
+            counts[k] = (e.n + 1, e.r + r, e.g + g, e.b + bl)
+        } }
+        let t = counts.max { a, c in a.value.n != c.value.n ? a.value.n < c.value.n : a.key > c.key }!.value
+        return (t.r / t.n, t.g / t.n, t.b / t.n)
+    }
+
+    /// Grouping checks: id, weight, pass (nil = not applicable). Weights sum to 100.
+    public static func groupingChecks(_ m: GroupingMetrics) -> [(id: String, weight: Int, pass: Bool?)] {
+        [("g_prox", 35, m.groups >= 2 && m.groups <= 24 && m.groupedShare >= 0.6 && m.ambiguousShare <= 0.25 && m.separation >= 1.5),
+         ("g_align", 25, m.alignment.alignedShare >= 0.5 && m.alignment.topLinesShare >= 0.35),
+         ("g_region", 20, m.regionShare < 0.15 ? nil : m.regionAgreement >= 0.75),
+         ("g_sim", 20, m.styleShare >= 0.6)]
+    }
+    public static func groupingScore(_ m: GroupingMetrics) -> Int {
+        let cs = groupingChecks(m).filter { $0.pass != nil }
+        let tot = cs.reduce(0) { $0 + $1.weight }
+        return Int((Double(cs.filter { $0.pass == true }.reduce(0) { $0 + $1.weight }) * 100 / Double(max(1, tot))).rounded())
+    }
+    static func groupingResult(_ m: GroupingMetrics) -> MeterResult {
+        let cs = groupingChecks(m).filter { $0.pass != nil }
+        return MeterResult(score: groupingScore(m), lowConfidence: false, confidencePct: 100,
+                           checks: cs.map { CheckResult(id: $0.id, yes: $0.pass!, p: nil, weight: $0.weight, kind: "code") }, note: nil)
+    }
+    static let groupingFailures: [String: String] = [
+        "g_prox": "gaps inside groups and between groups are too alike, so groups blur together",
+        "g_align": "text does not share a few clear left, right or centre lines",
+        "g_region": "groups do not sit on shared cards or panels",
+        "g_sim": "items in one group differ in size, weight or colour",
+    ]
+}
+
 extension Layout {
     /// Balance 0-100: centroid within 30% of centre horizontally (30) and 40% vertically (20), left/right weight ratio >= 0.5 (25), mirror similarity >= 0.8 (25).
     public static func balanceScore(_ m: BalanceMetrics) -> Int {
@@ -133,9 +261,9 @@ extension Layout {
         }
         let text = boxes.filter { !["demo", "logo"].contains($0.role) }
         if text.count >= 4 {
-            out["alignment"] = MeterResult(score: alignmentScore(alignment(text, imageWidth: imageWidth)), lowConfidence: false, confidencePct: 100, checks: [], note: nil)
+            out["grouping"] = groupingResult(grouping(text, pixels: pixels, imageWidth: imageWidth))
         } else {
-            out["alignment"] = MeterResult(score: 0, lowConfidence: false, confidencePct: 100, checks: [], note: nil, applicable: false)
+            out["grouping"] = MeterResult(score: 0, lowConfidence: false, confidencePct: 100, checks: [], note: nil, applicable: false)
         }
         return out
     }
@@ -155,11 +283,8 @@ extension Layout {
         }
         let text = boxes.filter { !["demo", "logo"].contains($0.role) }
         if text.count >= 4 {
-            let a = alignment(text, imageWidth: imageWidth); var f: [String] = []
-            if a.alignedShare < 0.5 { f.append("under half the text sits on a shared edge or row") }
-            if a.topLinesShare < 0.35 { f.append("text is spread over many different edges") }
-            if a.gapRegularity < 0.4 { f.append("spacing between stacked lines is uneven") }
-            out["alignment"] = f
+            let g = grouping(text, pixels: pixels, imageWidth: imageWidth)
+            out["grouping"] = groupingChecks(g).filter { $0.pass == false }.compactMap { groupingFailures[$0.id] }
         }
         return out
     }

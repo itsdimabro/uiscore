@@ -5,10 +5,10 @@ let args = Array(CommandLine.arguments.dropFirst())
 guard let path = args.first else { FileHandle.standardError.write(Data("usage: screencheck-cli <image.png> [--no-cache] [--out result.json]\n".utf8)); exit(2) }
 if args.contains("--layout") {
     guard let img = Contrast.load(URL(fileURLWithPath: path)), let px = Pixels(cgImage: img) else { exit(1) }
-    struct Out: Codable { var balance: BalanceMetrics; var alignment: AlignmentMetrics }
+    struct Out: Codable { var balance: BalanceMetrics; var grouping: GroupingMetrics; var score: Int; var checks: [String: Bool] }
     let enc = JSONEncoder(); enc.outputFormatting = [.sortedKeys]
     if args.contains("--boxes") { for b in OCR.boxes(in: img) { print(Int(b.x), Int(b.y), Int(b.w), Int(b.h), b.text.prefix(30)) } }
-    print(String(data: try enc.encode(Out(balance: Layout.balance(Layout.weightGrid(px)), alignment: Layout.alignment(OCR.boxes(in: img), imageWidth: img.width))), encoding: .utf8)!)
+    print(String(data: try enc.encode({ let g = Layout.grouping(OCR.boxes(in: img), pixels: px, imageWidth: img.width); return Out(balance: Layout.balance(Layout.weightGrid(px)), grouping: g, score: Layout.groupingScore(g), checks: Dictionary(uniqueKeysWithValues: Layout.groupingChecks(g).compactMap { c in c.pass.map { (c.id, $0) } })) }()), encoding: .utf8)!)
     exit(0)
 }
 let keys = KeyStore.keys()
