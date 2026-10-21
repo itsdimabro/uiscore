@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds release and assembles dist/UIScore.app (ad-hoc signed) plus dist/UIScore.zip.
+# Builds release and assembles dist/UIScore.app (signed) plus dist/UIScore.zip.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 swift build -c release
@@ -16,7 +16,7 @@ cat > "$APP/Contents/Info.plist" <<P
 <key>CFBundleIdentifier</key><string>com.screencheck.app</string>
 <key>CFBundleExecutable</key><string>ScreenCheck</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.3.0</string>
+<key>CFBundleShortVersionString</key><string>0.3.1</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSUIElement</key><true/>
@@ -24,6 +24,16 @@ cat > "$APP/Contents/Info.plist" <<P
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 P
-codesign --force -s - "$APP"
+# Stable local identity (see docs/DEVELOPMENT.md); ad-hoc when it is not set up on this machine.
+DEV="$HOME/Library/Application Support/UIScoreDev"
+KC="$DEV/signing.keychain-db"
+if [ -f "$KC" ] && [ -f "$DEV/keychain-password" ] \
+   && security unlock-keychain -p "$(cat "$DEV/keychain-password")" "$KC" \
+   && security find-identity -v -p codesigning "$KC" | grep -q "UIScore Local Signing"; then
+  codesign --force --deep --keychain "$KC" -s "UIScore Local Signing" "$APP"
+else
+  # Ad-hoc, but with a fixed designated requirement so every build keeps the same identity.
+  codesign --force --deep -s - -r='designated => identifier "com.screencheck.app"' "$APP"
+fi
 (cd dist && ditto -c -k --keepParent "UIScore.app" UIScore.zip)
 echo "Built $APP and dist/UIScore.zip"

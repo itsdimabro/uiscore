@@ -54,8 +54,8 @@ Command line: `swift run screencheck-cli shot.png` with `ANTHROPIC_API_KEY` and 
 ## How scoring works
 Each meter is a set of yes/no checks drawn from design research. UIScore detects the page type first (for example SaaS app, store, landing page) so checks that do not apply are skipped. Code measures such as contrast ratios, spacing and text size run locally on the image. Ease also checks that a screen uses at most two typefaces and one or two accent colours (NN/g, Pairing Typefaces and Using Color to Enhance Your Design). Text size is measured from the text's real height by letter shape, so small navigation text is no longer read as too small.
 
-### 0.3.0: designer ratings
-One Claude Sonnet call, asked as a senior product designer, rates all eight meters from 1 to 9 with the measured facts as evidence. Three calls run in parallel and the median per meter is used. Each meter blends that rating with its checklist score. The designer share per meter, chosen on the gold calibrate half and 40 LabintheWild sites only:
+### 0.3.0 and 0.3.1: designer ratings
+One Claude Sonnet call, asked as a senior product designer, rates all eight meters from 1 to 9 with the measured facts as evidence. Five calls run in parallel and the median per meter is used (three in 0.3.0, five in 0.3.1 to reduce run-to-run wobble). Each meter blends that rating with its checklist score. The designer share per meter, chosen on the gold calibrate half and 40 LabintheWild sites only:
 
 | Meter | Designer share |
 | --- | --- |

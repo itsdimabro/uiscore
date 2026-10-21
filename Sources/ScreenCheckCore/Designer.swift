@@ -1,13 +1,13 @@
 import Foundation
 
-/// Per-meter ratings from one senior-designer Sonnet call (3 votes, median per meter), blended with the checklist score.
+/// Per-meter ratings from one senior-designer Sonnet call (5 votes, median per meter), blended with the checklist score.
 /// Weights were chosen on the gold calibrate half and the LabintheWild train 40 only (see README, 0.3.0).
 public enum Designer {
     public static let version = "d1"
     public static let meters = ["contrast", "grouping", "balance", "order", "familiar", "ease", "clarity", "trust"]
     /// Share of the designer rating in each meter; 0 keeps the checklist alone.
     public static let weights: [String: Double] = ["contrast": 0, "grouping": 0.75, "balance": 1, "order": 0.5, "familiar": 0.5, "ease": 1, "clarity": 0.75, "trust": 0]
-    public static let votes = 3
+    public static let votes = 5
 
     public struct Rating: Codable, Equatable {
         public var scores: [String: Double]   // 1-9 per meter
@@ -87,7 +87,7 @@ public enum Designer {
         return out
     }
 
-    /// Three parallel votes, median per meter. The medians for one image are stored, so scoring it again gives the same answer.
+    /// Five parallel votes, median per meter. The medians for one image are stored, so scoring it again gives the same answer.
     /// nil when fewer than 2 votes are valid: the caller keeps the checklist.
     static func rate(keys: [String], image: [String: Any], facts: String, hash: String?, cacheDir: URL) async -> Rating? {
         let file = hash.map { cacheDir.appendingPathComponent("designer-\($0)-\(version).json") }
