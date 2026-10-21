@@ -261,6 +261,9 @@ public struct Pipeline {
         for (k, v) in Scoring.visionAnswers(facts, stats: stats) where codeAns[k] == nil { codeAns[k] = v }
         T.code = Date().timeIntervalSince(tc) * 1000
 
+        // Designer ratings start as soon as the code facts exist and run in parallel with Jev and the writer.
+        let designerFacts = Designer.facts(context: context, width: full.width, height: full.height, contrast: code.contrast, stats: stats, readingWords: rd?.words ?? 0)
+        let designerTask = Task<Designer.Rating?, Never> { await Designer.rate(keys: key, image: img, facts: designerFacts, hash: useCache ? hash : nil, cacheDir: cacheDir) }
         let pageName = PageName.generated(vision["page_name"].string) ?? fallbackName
         // Stage 1: everything code alone can answer.
         var contrastAns: [String: (yes: Bool, p: Double?, kind: String)] = [:]
@@ -341,6 +344,9 @@ public struct Pipeline {
             meters[m] = r
         }
         for (k, v) in layoutMeters { meters[k] = v }
+        // Falls back to the checklist alone when fewer than 2 designer votes were valid.
+        let designer = await designerTask.value
+        meters = Designer.blend(meters, rating: designer)
 
         var feeling: [String: Int] = [:]
         var fconf: [String: Int] = [:]
@@ -362,6 +368,7 @@ public struct Pipeline {
             contrastDetail: code.contrast, vision: vision, pixelStats: stats)
         result.overall = Scoring.overall(meters: meters.filter { $0.value.applicable != false }.mapValues { $0.score }, reading: rd.map { Int((Self.gradePoints($0.grade) * 10).rounded()) })
         result.imageHash = hash
+        result.designerReason = designer?.reason
         result.context = context
         let ctxChanged = notApplicable.filter { Applicability.kinds[$0] != nil || !Applicability.contextNotApplicable(context).isDisjoint(with: [$0]) }
         result.contextNote = Applicability.contextNote(context, changed: ctxChanged)
@@ -402,6 +409,12 @@ public struct Pipeline {
             let problem = (arr.count > 2 ? (arr[2].bool ?? false) : false) || (k == "reading" && score < 85)
             if r.meters[k]?.applicable == false { out[k] = MeterText(why: "This doesn't apply to this kind of screen.", fix: ""); continue }
             out[k] = MeterText(why: why, fix: finalFix(fix, score: score, problem: problem, failed: failed, meter: k))
+        }
+        // The designer's main reason joins the Why line of the meter they rated lowest, when it still fits.
+        if let reason = r.designerReason, !reason.isEmpty,
+           let low = Designer.meters.filter({ r.meters[$0]?.designer != nil }).min(by: { r.meters[$0]!.designer! < r.meters[$1]!.designer! }),
+           let t = out[low], !t.why.isEmpty, t.why.count + reason.count < 200 {
+            out[low]?.why = t.why + " " + reason
         }
         // Valence and Intensity are positions, not scores: a reason only. Reading gets a fix only above grade 9.
         for k in ["valence", "intensity"] {

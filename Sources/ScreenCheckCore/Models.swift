@@ -26,6 +26,7 @@ public struct MeterResult: Codable {
     public var confidencePct: Int
     public var checks: [CheckResult]
     public var note: String?     // e.g. "only 9 of 40 text items checked"
+    public var designer: Int? = nil      // designer rating on the 0-100 scale, when one was blended in
     public var applicable: Bool? = nil   // false: too few checks apply to this kind of screen; shown as "—", left out of Score
 }
 
@@ -54,6 +55,7 @@ public struct RunResult: Codable, Identifiable {
     public var pageName: String
     public var imageWidth: Int
     public var imageHeight: Int
+    public var designerReason: String? = nil       // the designer's main reason, one sentence
     public var meters: [String: MeterResult]       // contrast, grouping, balance, order, familiar, ease, clarity, trust
     public var feeling: [String: Int]              // vv vi cv ci (0-100)
     public var feelingLow: [String: Bool]          // v / a

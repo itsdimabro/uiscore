@@ -129,7 +129,13 @@ public final class ClipboardWatcher {
 
 public enum KeyStore {
     static let service = "ScreenCheck"
+    /// Dev, test and snapshot runs never touch the Keychain: every ad-hoc build is a new app to it and would raise a password prompt.
+    static var offKeychain: Bool {
+        let e = ProcessInfo.processInfo.environment
+        return e["SCREENCHECK_ENV_KEYS"] == "1" || e["SCREENCHECK_SNAPSHOT"] != nil || e["SCREENCHECK_ONBOARD_SNAPSHOT"] != nil
+    }
     public static func get(_ name: String) -> String? {
+        if offKeychain { return nil }
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: name, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var out: AnyObject?
@@ -137,6 +143,7 @@ public enum KeyStore {
         return String(data: d, encoding: .utf8)
     }
     public static func set(_ name: String, _ value: String) {
+        if offKeychain { return }
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: name]
         SecItemDelete(base as CFDictionary)
         if value.isEmpty { return }

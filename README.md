@@ -54,7 +54,26 @@ Command line: `swift run screencheck-cli shot.png` with `ANTHROPIC_API_KEY` and 
 ## How scoring works
 Each meter is a set of yes/no checks drawn from design research. UIScore detects the page type first (for example SaaS app, store, landing page) so checks that do not apply are skipped. Code measures such as contrast ratios, spacing and text size run locally on the image. Ease also checks that a screen uses at most two typefaces and one or two accent colours (NN/g, Pairing Typefaces and Using Color to Enhance Your Design). Text size is measured from the text's real height by letter shape, so small navigation text is no longer read as too small.
 
-Score tracks human appeal ratings at ρ ≈ 0.40 on 60 sites (95% interval 0.15 to 0.62) from Reinecke & Gajos, "Quantifying Visual Preferences Around the World" (2014).
+### 0.3.0: designer ratings
+One Claude Sonnet call, asked as a senior product designer, rates all eight meters from 1 to 9 with the measured facts as evidence. Three calls run in parallel and the median per meter is used. Each meter blends that rating with its checklist score. The designer share per meter, chosen on the gold calibrate half and 40 LabintheWild sites only:
+
+| Meter | Designer share |
+| --- | --- |
+| Contrast | 0 |
+| Grouping | 0.75 |
+| Balance | 1 |
+| Hierarchy | 0.5 |
+| Familiarity | 0.5 |
+| Ease | 1 |
+| Clarity | 0.75 |
+| Trust | 0 |
+
+If fewer than two votes are valid, the checklist score is used alone. Results are cached per image.
+
+On the gold test half (unseen pages), praised-versus-poor AUC rose from 0.53 to 0.83 (praised mean 78.9, poor 63.7). Score tracks human appeal ratings on 60 sites at ρ ≈ 0.47 (95% interval 0.22 to 0.69), held-out 20 at 0.38 (interval -0.12 to 0.76), from Reinecke & Gajos, "Quantifying Visual Preferences Around the World" (2014).
+
+### 0.2.2
+Spacing, icon and consistency detectors exist in code but are not scored: none separated praised from poor pages on the calibrate half.
 
 ## License
 [MIT](LICENSE)
