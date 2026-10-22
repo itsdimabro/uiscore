@@ -77,20 +77,12 @@ final class Delegate: NSObject, NSApplicationDelegate {
         #endif
         if KeyStore.keys().claude.isEmpty || KeyStore.keys().jev.isEmpty { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.openOnboarding() } }
     }
-    /// A click anywhere outside the card closes it. Clicks in other apps arrive through the global monitor, clicks in the card's
-    /// transparent margin through the local one; clicks on the card itself, the lightbox and other windows of ours are ignored.
+    /// A click in another app closes the card. Clicks in any window of ours never do: the measured card frame
+    /// lagged behind layout changes (History opening), so clicks on the card itself were read as outside.
     func installOutsideClick() {
-        let kinds: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let kinds: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown]
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: kinds) { [weak self] _ in
-            MainActor.assumeIsolated { if self?.panel.isVisible == true { self?.model.outsideClick() } }
-        }
-        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: kinds) { [weak self] e in
-            MainActor.assumeIsolated {
-                guard let self, e.window === self.panel, self.panel.isVisible, let h = self.panel.contentView?.bounds.height else { return }
-                let p = CGPoint(x: e.locationInWindow.x, y: h - e.locationInWindow.y)
-                if !self.model.cardFrame.contains(p) { self.model.outsideClick() }
-            }
-            return e
+            MainActor.assumeIsolated { if self?.panel.isVisible == true, NSEvent.pressedMouseButtons & 0b11 != 0 { self?.model.outsideClick() } }
         }
     }
     /// A saved shortcut equal to the old default (Control+Option+S) is replaced by Command+Shift+V, once.

@@ -22,13 +22,20 @@ public enum Claude {
     public static let sonnet = "claude-sonnet-5-5"
 
     /// Tries the keys in order; a key that is rejected, out of credit or rate-limited hands the call to the next one.
-    public static func call(keys: [String], system: String, content: [[String: Any]], maxTokens: Int, model: String = Claude.model) async throws -> (json: JSONValue, ms: Double) {
+    /// The system prompt as content blocks; with `cache` the block is marked for prompt caching so repeated votes reuse it.
+    static func systemBlocks(_ system: String, cache: Bool) -> [[String: Any]] {
+        var b: [String: Any] = ["type": "text", "text": system]
+        if cache { b["cache_control"] = ["type": "ephemeral"] }
+        return [b]
+    }
+
+    public static func call(keys: [String], system: String, content: [[String: Any]], maxTokens: Int, model: String = Claude.model, cacheSystem: Bool = false) async throws -> (json: JSONValue, ms: Double) {
         try await KeyFallback.run(keys: keys) { key, last in
-            try await call(key: key, system: system, content: content, maxTokens: maxTokens, model: model, retries: last ? 3 : 0)
+            try await call(key: key, system: system, content: content, maxTokens: maxTokens, model: model, retries: last ? 3 : 0, cacheSystem: cacheSystem)
         }
     }
 
-    public static func call(key: String, system: String, content: [[String: Any]], maxTokens: Int, model: String = Claude.model, retries: Int = 3) async throws -> (json: JSONValue, ms: Double) {
+    public static func call(key: String, system: String, content: [[String: Any]], maxTokens: Int, model: String = Claude.model, retries: Int = 3, cacheSystem: Bool = false) async throws -> (json: JSONValue, ms: Double) {
         let t = Date()
         var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         req.httpMethod = "POST"
@@ -38,7 +45,7 @@ public enum Claude {
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         var body: [String: Any] = ["model": model, "max_tokens": maxTokens,
                                    "messages": [["role": "user", "content": content]]]
-        if !system.isEmpty { body["system"] = system }
+        if !system.isEmpty { body["system"] = cacheSystem ? systemBlocks(system, cache: true) : system }
         if model == Claude.model { body["thinking"] = ["type": "disabled"] }   // Sonnet rejects "disabled" and does not think by default
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let data = try await Net.send(req, who: "Claude", retries: retries)

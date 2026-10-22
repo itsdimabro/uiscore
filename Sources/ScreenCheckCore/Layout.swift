@@ -129,6 +129,7 @@ public struct GroupingMetrics: Codable, Equatable {
     public var rhythmGaps: Int = 0
     public var styleShare: Double = 1       // share of boxes matching their group's dominant size, weight and colour
     public var alignment = AlignmentMetrics()
+    public var meaningClear: Bool? = nil     // the label call's read: items that sit together are related (a pattern, not a jumble)
     public var groupAlignShare: Double? = nil   // share of boxes in groups of 2+ that share a left edge, right edge or centre line with a groupmate
     public init() {}
 }
@@ -194,11 +195,18 @@ extension Layout {
         if let px = pixels { for i in b.indices { if let s = Contrast.clusterSample(px, box: b[i]) { fg[i] = s.fg; bgc[i] = s.bg } } }
         func close(_ p: (Int, Int, Int), _ q: (Int, Int, Int)) -> Bool { abs(p.0 - q.0) + abs(p.1 - q.1) + abs(p.2 - q.2) <= 80 }
         var matching = 0, counted = 0
+        // Like is compared with like: the lead line of every group (card titles) against the other lead lines, the rest
+        // (descriptions) against the other rest. A title and its description inside one card are different roles, which is
+        // hierarchy, not dissimilarity. OCR heights jitter with descenders, so sizes within 1.5x count as one size.
+        func sim(_ i: Int, _ j: Int) -> Bool {
+            let r = b[i].fontPx / max(1, b[j].fontPx)
+            return r >= 1 / 1.5 && r <= 1.5 && b[i].bold == b[j].bold && (fg[i] == nil || fg[j] == nil || close(fg[i]!, fg[j]!))
+        }
+        var tiers: [String: [Int]] = [:]
         for mem in members.values where mem.count >= 2 {
-            func sim(_ i: Int, _ j: Int) -> Bool {
-                let r = b[i].fontPx / max(1, b[j].fontPx)
-                return r >= 0.8 && r <= 1.25 && b[i].bold == b[j].bold && (fg[i] == nil || fg[j] == nil || close(fg[i]!, fg[j]!))
-            }
+            for (rank, i) in mem.sorted(by: { (b[$0].y, b[$0].x) < (b[$1].y, b[$1].x) }).enumerated() { tiers["\(b[i].role)-\(min(rank, 1))", default: []].append(i) }
+        }
+        for mem in tiers.values {
             let dom = mem.max { a, c in
                 let na = mem.filter { sim($0, a) }.count, nc = mem.filter { sim($0, c) }.count
                 return na != nc ? na < nc : a > c
@@ -253,10 +261,13 @@ extension Layout {
 
     /// Grouping checks: id, weight, pass (nil = not applicable). Weights sum to 100.
     public static func groupingChecks(_ m: GroupingMetrics) -> [(id: String, weight: Int, pass: Bool?)] {
+        // Wagemans et al. 2012: proximity, similarity, common region and meaning organise a scene; alignment is a minor cue (10).
         [("g_prox", 35, m.groups >= 2 && m.groups <= 24 && m.groupedShare >= 0.6 && m.ambiguousShare <= 0.25 && m.separation >= 1.5),
-         ("g_align", 25, m.groupAlignShare.map { $0 >= 0.6 } ?? (m.alignment.alignedShare >= 0.5 && m.alignment.topLinesShare >= 0.35)),
-         ("g_region", 20, m.regionShare < 0.15 ? nil : m.regionAgreement >= 0.75),
-         ("g_sim", 20, m.styleShare >= 0.6)]
+         ("g_sim", 20, m.styleShare >= 0.6),
+         // Common region (Palmer 1992) adds evidence when present; its absence is never a flaw (full-bleed layouts are fine).
+         ("g_region", 15, m.regionShare >= 0.15 && m.regionAgreement >= 0.75 ? true : nil),
+         ("g_meaning", 20, m.meaningClear),
+         ("g_align", 10, m.groupAlignShare.map { $0 >= 0.5 } ?? (m.alignment.alignedShare >= 0.4 && m.alignment.topLinesShare >= 0.3))]
     }
     public static func groupingScore(_ m: GroupingMetrics) -> Int {
         let cs = groupingChecks(m).filter { $0.pass != nil }
@@ -271,15 +282,17 @@ extension Layout {
     static let groupingFailures: [String: String] = [
         "g_prox": "gaps inside groups and between groups are too alike, so groups blur together",
         "g_align": "items inside a group do not share a left, right or centre line",
-        "g_region": "groups do not sit on shared cards or panels",
-        "g_sim": "items in one group differ in size, weight or colour",
+        "g_region": "some groups straddle two different background colours",
+        "g_meaning": "items that sit together do not read as related",
+        "g_sim": "matching items in different groups (such as all titles, or all descriptions) differ in size, weight or colour",
     ]
 }
 
 extension Layout {
     /// Balance 0-100: centroid within 30% of centre horizontally (30) and 40% vertically (20), left/right weight ratio >= 0.5 (25), mirror similarity >= 0.8 (25).
+    /// Mirror symmetry is scored but never named as a problem: asymmetric app layouts are balanced.
     public static func balanceScore(_ m: BalanceMetrics) -> Int {
-        (abs(m.centroidX) <= 0.3 ? 30 : 0) + (abs(m.centroidY) <= 0.4 ? 20 : 0) + (m.leftRight >= 0.5 ? 25 : 0) + (m.symmetry >= 0.8 ? 25 : 0)
+        (abs(m.centroidX) <= 0.4 ? 30 : 0) + (abs(m.centroidY) <= 0.5 ? 20 : 0) + (m.leftRight >= 0.33 ? 30 : 0) + (m.symmetry >= 0.6 ? 20 : 0)
     }
     /// Alignment 0-100: 50%+ of boxes sit on an alignment line of 3+ boxes (30), the 3 busiest lines hold 35%+ of boxes (45), 40%+ of stack gaps repeat (25).
     public static func alignmentScore(_ m: AlignmentMetrics) -> Int {
@@ -289,22 +302,23 @@ extension Layout {
     /// The model's demo list wobbles by a box or two between runs; the span it covers does not.
     static func pageText(_ boxes: [TextBox]) -> [TextBox] {
         let demo = boxes.filter { $0.role == "demo" }
-        guard demo.count >= 3 else { return boxes.filter { !["demo", "logo"].contains($0.role) } }
+        guard demo.count >= 3 else { return boxes.filter { !Scoring.nonPage.contains($0.role) } }
         let x0 = demo.map { $0.x }.min()!, y0 = demo.map { $0.y }.min()!, x1 = demo.map { $0.x + $0.w }.max()!, y1 = demo.map { $0.y + $0.h }.max()!
         return boxes.filter { b in
-            if ["demo", "logo"].contains(b.role) { return false }
+            if Scoring.nonPage.contains(b.role) { return false }
             let cx = b.x + b.w / 2, cy = b.y + b.h / 2
             return !(cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1)
         }
     }
-    static func meters(pixels: Pixels?, boxes: [TextBox], imageWidth: Int) -> [String: MeterResult] {
+    static func meters(pixels: Pixels?, boxes: [TextBox], imageWidth: Int, meaning: Bool? = nil) -> [String: MeterResult] {
         var out: [String: MeterResult] = [:]
         if let px = pixels {
             out["balance"] = MeterResult(score: balanceScore(balance(weightGrid(px))), lowConfidence: false, confidencePct: 100, checks: [], note: nil)
         }
         let text = pageText(boxes)
         if text.count >= 4 {
-            out["grouping"] = groupingResult(grouping(text, pixels: pixels, imageWidth: imageWidth))
+            var g = grouping(text, pixels: pixels, imageWidth: imageWidth); g.meaningClear = meaning
+            out["grouping"] = groupingResult(g)
         } else {
             out["grouping"] = MeterResult(score: 0, lowConfidence: false, confidencePct: 100, checks: [], note: nil, applicable: false)
         }
@@ -313,21 +327,26 @@ extension Layout {
 }
 
 extension Layout {
+    static func balanceProblems(_ b: BalanceMetrics) -> [String] {
+        var f: [String] = []
+        if abs(b.centroidX) > 0.4 { f.append(b.centroidX < 0 ? "most visual weight sits on the left" : "most visual weight sits on the right") }
+        if abs(b.centroidY) > 0.5 { f.append(b.centroidY < 0 ? "weight is pushed to the top" : "weight is pushed to the bottom") }
+        if b.leftRight < 0.33 { f.append("left and right halves differ a lot in weight") }
+        return f
+    }
     /// Plain-language failures for the writer; empty when the meter passes every test.
-    static func problems(pixels: Pixels?, boxes: [TextBox], imageWidth: Int) -> [String: [String]] {
+    static func problems(pixels: Pixels?, boxes: [TextBox], imageWidth: Int, meaning: Bool? = nil) -> [String: [String]] {
         var out: [String: [String]] = [:]
         if let px = pixels {
-            let b = balance(weightGrid(px)); var f: [String] = []
-            if abs(b.centroidX) > 0.3 { f.append(b.centroidX < 0 ? "most visual weight sits on the left" : "most visual weight sits on the right") }
-            if abs(b.centroidY) > 0.4 { f.append(b.centroidY < 0 ? "weight is pushed to the top" : "weight is pushed to the bottom") }
-            if b.leftRight < 0.5 { f.append("left and right halves differ a lot in weight") }
-            if b.symmetry < 0.8 { f.append("the two halves do not mirror each other") }
+            let f = balanceProblems(balance(weightGrid(px)))
             out["balance"] = f
         }
         let text = pageText(boxes)
         if text.count >= 4 {
-            let g = grouping(text, pixels: pixels, imageWidth: imageWidth)
-            out["grouping"] = groupingChecks(g).filter { $0.pass == false }.compactMap { groupingFailures[$0.id] }
+            var g = grouping(text, pixels: pixels, imageWidth: imageWidth); g.meaningClear = meaning
+            let failed = groupingChecks(g).filter { $0.pass == false }
+            // Alignment is named only when it is the one cue that failed.
+            out["grouping"] = failed.filter { $0.id != "g_align" || failed.count == 1 }.compactMap { groupingFailures[$0.id] }
         }
         return out
     }

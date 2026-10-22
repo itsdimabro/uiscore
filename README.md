@@ -54,6 +54,21 @@ Command line: `swift run screencheck-cli shot.png` with `ANTHROPIC_API_KEY` and 
 ## How scoring works
 Each meter is a set of yes/no checks drawn from design research. UIScore detects the page type first (for example SaaS app, store, landing page) so checks that do not apply are skipped. Code measures such as contrast ratios, spacing and text size run locally on the image. Ease also checks that a screen uses at most two typefaces and one or two accent colours (NN/g, Pairing Typefaces and Using Color to Enhance Your Design). Text size is measured from the text's real height by letter shape, so small navigation text is no longer read as too small.
 
+### 0.3.3
+- Only clicks in other apps close the card. This fixes the card closing on its own.
+- Hierarchy counts repeated same-style titles as one level.
+- Grouping is judged on closeness, similarity, shared background and meaning. Alignment is a minor cue.
+- Contrast has seven checks (colour, size, weight, spacing) and always explains itself.
+- Ease uses relative text sizes and line length, never absolute px. Product demo text does not count as reading.
+- Trust counts customer logos and product demonstration.
+- Cookie banners and chat bubbles are ignored for layout.
+- Comments only name real, visible elements.
+- The designer judge follows a rulebook built from Impeccable, UI Craft (educlopez), Anthropic's design plugin, the author's flashcards and 25 rules from design books. Each meter's reason is its own.
+- The headline-clarity check passes product-demonstrating homepages.
+- The footer check applies only when a footer is visible.
+
+Validation on 52 public sites: praised-versus-poor AUC 0.983 (praised mean 91.5, poor 67.2).
+
 ### 0.3.2
 - Dark screens are judged on their palette, not on how dark they are.
 - Grouping checks alignment within each group.

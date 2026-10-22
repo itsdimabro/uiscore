@@ -143,14 +143,11 @@ public struct Pipeline {
         }
     }
 
-    /// Per-meter facts for the writer: score, what failed, and for a meter scored below 100 with nothing failed in code
-    /// (designer-only Balance, or a designer-lowered meter) the designer's reason, so the text explains the number.
-    static func writerMeterFacts(meters: [String: MeterResult], failed: [String: [String]], designerReason: String?) -> [String: Any] {
+    /// Per-meter facts for the writer: score and what failed. A designer-only deduction is explained by that meter's own designer reason, never by the writer.
+    static func writerMeterFacts(meters: [String: MeterResult], failed: [String: [String]]) -> [String: Any] {
         var out: [String: Any] = [:]
         for (k, m) in meters {
-            var e: [String: Any] = ["score": m.score, "failed": failed[k] ?? [String]()]
-            if m.designer != nil, m.score < 100, (failed[k] ?? []).isEmpty, let r = designerReason, !r.isEmpty { e["deduction"] = r }
-            out[k] = e
+            out[k] = ["score": m.score, "failed": failed[k] ?? [String]()] as [String: Any]
         }
         return out
     }
@@ -158,7 +155,7 @@ public struct Pipeline {
     /// The Why line explains in words: no score numbers, no naming another meter. Sentences that do are dropped.
     static let topicWords: [String: String] = [
         "balance": #"\b(weight|halves|mirror|lopsided|heavier|centroid)\b"#, "grouping": #"\b(groups?|grouped|line up|shared edge)\b"#,
-        "contrast": #"\b(contrast|faint|hard to read)\b"#, "order": #"\b(eye|hierarchy|emphasis|focal|first stop|shouted)\b"#,
+        "contrast": #"\b(contrast|faint|hard to read|heavier|larger|space between)\b"#, "order": #"\b(eye|hierarchy|emphasis|focal|first stop|shouted)\b"#,
         "familiar": #"\b(convention|usual pattern|top menu|familiar)\b"#, "ease": #"\b(px|words|clutter|dense|gradient|flat|text size)\b"#,
         "clarity": #"\b(button|headline|label|slogan|vague)\b"#, "trust": #"\b(proof|screenshot|ads?|chat widget|customer logos?)\b"#]
     /// A sentence about another meter's topic and none of this one's is dropped.
@@ -179,7 +176,7 @@ public struct Pipeline {
             if l.range(of: #"worth (changing|fixing)|nothing (needs|to) (change|fix)|small deduction remains"#, options: .regularExpression) != nil { return false }
             if topicFilter, offTopic(l, meter: meter) { return false }
             if l.range(of: #"doesn't reach|does not reach|\bis the (lowest|weakest)\b|\bthe designer\b|(?<![\d.:,])[1-9](?![\d.:,%]|\s?px)"#, options: .regularExpression) != nil { return false }
-            if l.range(of: #"\b\d+ or (fewer|more|less)\b|_px\b|\b[a-z]+_[a-z_]+\b|\bprimary=|\bbuttons\[\]"#, options: .regularExpression) != nil { return false }
+            if l.range(of: #"\b(\d+|one|two|three|four|five|six|seven|eight|ten|twelve|fifteen) or (fewer|more|less)\b|_px\b|\b[a-z]+_[a-z_]+\b|\bprimary=|\bbuttons\[\]"#, options: .regularExpression) != nil { return false }
             if l.range(of: #"\b(nav(igation)?|menu)\b[^.]*\b(items?|choices|links|entries|count|many|long)\b|\b(too many|more than (seven|7))\b[^.]*\b(nav|menu)"#, options: .regularExpression) != nil { return false }
             if l.range(of: #"\b(score|scores|scored|points?)\b[^.]*\d|\d+ ?/ ?100|\b(lowest|highest) score\b|\bscores? (is|of)\b"#, options: .regularExpression) != nil { return false }
             if others.contains(where: { o in ["order", "balance", "grouping", "contrast", "familiar", "ease", "clarity", "trust"].contains(o) && l.range(of: "\\b" + o + "\\b (issue|problem|score|meter)", options: .regularExpression) != nil }) { return false }
@@ -190,6 +187,35 @@ public struct Pipeline {
         var out = kept.joined(separator: " ")
         if let f = out.first, f.isLowercase { out = f.uppercased() + out.dropFirst() }
         return out.last.map { ".!?".contains($0) } == true ? out : out + "."
+    }
+    /// Drops sentences that claim an element the page does not have (ads, pop-ups, banners, promos unless an overlay or promo was detected),
+    /// absolute text-size talk, a missing card/panel, and alignment talk on any meter but Balance-free Alignment cases.
+    static func groundedWhy(_ s: String, meter: String, overlayPresent: Bool) -> String {
+        let sentences = s.replacingOccurrences(of: #"(?<=[.!?])\s+"#, with: "\u{1}", options: .regularExpression).split(separator: "\u{1}").map(String.init)
+        let kept = sentences.filter { sen in
+            let l = sen.lowercased()
+            if !overlayPresent, l.range(of: #"\b(ads?|ad-like|pop-?ups?|banners?|promos?|promotions?|cookie|chat)\b"#, options: .regularExpression) != nil { return false }
+            if l.range(of: #"\b\d+ ?px\b|\bpixels?\b|\b(tiny|small(er)?) (body )?(text|type|font)|\btext (is|are) (too )?small\b"#, options: .regularExpression) != nil { return false }
+            if meter == "grouping", l.range(of: #"\b(card|panel)s?\b"#, options: .regularExpression) != nil, l.range(of: #"\b(lack|no|without|missing|need|add)\b"#, options: .regularExpression) != nil { return false }
+            if meter == "grouping", l.range(of: #"\b(align|aligned|alignment|line up|edge)\b"#, options: .regularExpression) != nil { return false }
+            return true
+        }
+        return kept.joined(separator: " ")
+    }
+    /// Contrast always explains itself in terms of its four sub-rubrics (colour, size, weight, spacing); nothing but the failures at under 100.
+    static func contrastWhy(_ r: RunResult, failedIDs: [String], score: Int, fallback: String) -> String {
+        let ids = Set(failedIDs)
+        var bits: [String] = []
+        if !ids.isDisjoint(with: ["c_aa", "c_most", "c_floor", "c_head"]), let d = r.contrastDetail {
+            let weak = d.boxes.filter { !$0.pass && $0.ratio != nil }.sorted { ($0.ratio ?? 0) < ($1.ratio ?? 0) }.prefix(2).map { "\"" + truncate($0.text, max: 24) + "\"" }
+            bits.append(weak.isEmpty ? "Some text is too faint against its background" : "Some text is too faint against its background, such as " + weak.joined(separator: " and "))
+        }
+        if ids.contains("c_size") { bits.append("the headline is not much larger than the body text") }
+        if ids.contains("c_weight") { bits.append("the headline is not set heavier than the body text") }
+        if ids.contains("c_space") { bits.append("the space between groups is no bigger than the space inside them") }
+        if bits.isEmpty { return score >= 100 ? "Text colour, size, weight and spacing all set the important things apart." : fallback }
+        let t = bits.joined(separator: "; ")
+        return t.prefix(1).uppercased() + t.dropFirst() + "."
     }
     /// Scored, but the 7-item cut-off is an own choice (meta-analysis of choice overload about 0): never advised, never nagged.
     static let navCountIDs: Set<String> = ["C4", "f_navcount"]
@@ -220,7 +246,8 @@ public struct Pipeline {
         }
         if let s = real.compactMap({ plainCheck[$0.id] }).first { return s }
         let topic = ["balance": "how weight spreads across the page", "grouping": "how clearly related items sit together", "contrast": "how easily text reads against its background", "order": "how clearly the eye is led through the page", "familiar": "how closely the layout follows usual patterns", "ease": "how easy the page is to take in", "clarity": "how clearly the main action stands out", "trust": "how trustworthy the page looks"][meter] ?? "the overall look"
-        return genericWhyPrefix + topic + "."
+        _ = topic
+        return ""
     }
     /// Quoted copy or capitalised product-like phrases in a Fix must exist in the page text; unknown copy means the Fix invented it.
     /// An empty page text means no OCR is available, so nothing can be checked.
@@ -233,13 +260,16 @@ public struct Pipeline {
         if let r = fix.range(of: #"(?<=\bto )[A-Z]\w*(?:\s+(?:[A-Z]|i[A-Z])\w*)+"#, options: .regularExpression) { quoted.append(String(fix[r])) }
         return quoted.allSatisfy { hay.contains($0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: " ."))) }
     }
+    /// Failed checks go to the writer as the plain failed statement, never as a yes/no question or a "N or fewer" threshold it could echo back as a contradiction.
+    static func writerFailedText(_ checks: [Check]) -> [String] { checks.map { plainCheck[$0.id] ?? $0.q } }
+    static let layoutPlain: [String: String] = ["g_prox": "Gaps inside groups and between groups are too alike, so groups blur together.", "g_align": "Items inside a group do not share a left, right or centre line.", "g_region": "Some groups straddle two different background colours.", "g_meaning": "Items that sit together do not read as related.", "g_sim": "Matching items in different groups differ in size, weight or colour."]
     static let plainCheck: [String: String] = [
-        "C8": "Something next to the main button competes with it.", "T3": "The page shows no real product screenshot or person.", "T2": "The page shows no named proof such as customer logos.",
-        "E9": "Some text is very small.", "E10": "The body text is small.", "E4": "The screen shows a lot of words.", "E7": "Some text sits on a gradient or photo.",
+        "C8": "A banner or pop-up next to the main button competes with it.", "T3": "The page does not show the real product in use or a real person.", "T2": "The page shows no proof such as customer logos, ratings or user counts.",
+        "E9": "Some text is much smaller than the body text.", "E10": "The body text is tiny next to the headline.", "E4": "The screen shows a lot of words.", "E7": "Some text sits on a gradient or photo.",
         "E6": "Many boxed panels crowd the screen.", "E1": "Too many text sizes are in use.", "E5": "Some lines of text run long.", "C6": "The headline does not say plainly what the product does.",
         "C7": "Some links or buttons do not look clickable.", "C9": "Some button labels are generic.", "C1": "More than one button competes as the main action.", "h_one_cta": "More than one button competes as the main action.",
         "h_emphasis": "Too many items shout for attention at once.", "h_cta_fold": "The main button sits low on the screen.", "h_first": "The eye does not land on the headline first.",
-        "h_scale": "The headline is not much bigger than the text under it.", "c_aa": "Some text is hard to read against its background.", "T5": "Ad-like items clutter the page.",
+        "h_scale": "The headline is not much bigger than the text under it.", "c_aa": "Some text is hard to read against its background.", "T5": "A promo banner or pop-up competes with the page.", "c_most": "Several text items are too faint against their background.", "c_floor": "The faintest text is too faint against its background.", "c_head": "The largest text is too faint against its background.", "c_size": "The headline is not much larger than the body text.", "c_weight": "The headline is not set heavier than the body text.", "c_space": "The space between groups is no bigger than the space inside them.",
         "h_nav_quiet": "The navigation is as loud as the headline.", "C3": "The main button is not visible without scrolling.", "C10": "The sentences run long."]
     /// The Fix is the vetted rubric sentence of the heaviest failed check on the meter, or nothing. Designer-only deductions get no Fix.
     static func rubricFix(failed: [Check], score: Int, meter: String) -> String {
@@ -348,7 +378,8 @@ public struct Pipeline {
             let b = boxes[pid]
             if case .object(var o) = vision { o["primary_y_pct"] = .number((b.y + b.h / 2) / Double(full.height) * 100); o["primary_y_pt"] = .number((b.y + b.h / 2) / max(1, screenScale)); vision = .object(o) }
         }
-        let scaled = boxes
+        // Consent bars and chat bubbles are transient overlays: they leave every layout and text meter.
+        let scaled = boxes.filter { $0.role != "overlay" }
 
         // Code checks
         let tc = Date()
@@ -358,7 +389,7 @@ public struct Pipeline {
         facts.imageHeight = full.height
         facts.allBoxes = scaled
         // Unmeasurable text (gradient, photo, neighbouring artwork) counted over all non-logo, non-demo boxes.
-        let textOnly = scaled.filter { !["demo", "logo"].contains($0.role) }
+        let textOnly = scaled.filter { !Scoring.nonPage.contains($0.role) }
         let un = pixels.map { px in textOnly.filter { Contrast.clusterSample(px, box: $0) == nil }.count } ?? 0
         facts.unmeasuredShare = textOnly.isEmpty ? 0 : Double(un) / Double(textOnly.count)
         facts.primaryCount = primary == nil ? 0 : 1
@@ -379,15 +410,16 @@ public struct Pipeline {
         contrastR.note = code.note
         stages.emit(meters: ["contrast": contrastR], ready: ["contrast"]) { $0.name = pageName; $0.vision = vision; $0.contrast = code.contrast; $0.stats = stats }
         // Balance and Alignment: pixels and OCR boxes only.
-        let layoutMeters = Layout.meters(pixels: pixels, boxes: scaled, imageWidth: full.width)
+        let meaning = vision["grouping_clear"].bool
+        let layoutMeters = Layout.meters(pixels: pixels, boxes: scaled, imageWidth: full.width, meaning: meaning)
         stages.emit(meters: layoutMeters, ready: Set(layoutMeters.keys))
-        let lp = Layout.problems(pixels: pixels, boxes: scaled, imageWidth: full.width)
+        let lp = Layout.problems(pixels: pixels, boxes: scaled, imageWidth: full.width, meaning: meaning)
         // Text fill-in starts now, in parallel with Jev. It sees every check answered so far; Jev-only checks come later.
         let provisional: [String: Any] = {
             var sc: [String: Any] = [:]
             for m in Rubric.meterKeys {
                 let cs = Rubric.checks(for: m)
-                let failed = cs.filter { codeAns[$0.id] == false }.prefix(3).map { $0.q }
+                let failed = Self.writerFailedText(Array(cs.filter { codeAns[$0.id] == false }.prefix(3)))
                 let got = cs.filter { codeAns[$0.id] == true }.reduce(0) { $0 + $1.w }
                 let known = cs.filter { codeAns[$0.id] != nil }.reduce(0) { $0 + $1.w }
                 sc[m] = ["score": known == 0 ? 0 : Int((Double(got) / Double(known) * 100).rounded()), "failed": Array(failed)]
@@ -410,7 +442,7 @@ public struct Pipeline {
         state["all_copy"] = .string(facts.allCopy)
         state["text_box_count"] = .number(Double(facts.boxes.count))
         let c6 = await c6Task.value
-        if let c6 { codeAns["C6"] = c6 }
+        if let c6 { codeAns["C6"] = Applicability.c6Holds(vote: c6, context: context, demonstrates: facts.demonstratesProduct) }
         let notApplicableEarly = Applicability.notApplicable(kind: context.adjust(ScreenKind.resolve(vision: vision, width: full.width, height: full.height), width: full.width, height: full.height), pageType: vision["page_type"].string ?? "", facts: facts, context: context)
         // Meters whose checks code already answered do not wait for Jev.
         for m in Rubric.meterKeys where m != "contrast" {
@@ -470,6 +502,7 @@ public struct Pipeline {
         result.overall = Scoring.overall(meters: meters.filter { $0.value.applicable != false }.mapValues { $0.score }, reading: rd.map { Int((Self.gradePoints($0.grade) * 10).rounded()) })
         result.imageHash = hash
         result.designerReason = designer?.reason
+        result.designerReasons = designer?.reasons
         result.context = context
         let ctxChanged = notApplicable.filter { Applicability.kinds[$0] != nil || !Applicability.contextNotApplicable(context).isDisjoint(with: [$0]) }
         result.contextNote = Applicability.contextNote(context, changed: ctxChanged)
@@ -483,10 +516,10 @@ public struct Pipeline {
         var sc = (wf["meters"] as? [String: Any]) ?? [:]
         var failedQ: [String: [String]] = [:]
         for k in Meters.order where k != "reading" {
-            failedQ[k] = Rubric.checks(for: k).filter { c in !Self.navCountIDs.contains(c.id) }.filter { c in result.meters[k]?.checks.first { $0.id == c.id }?.yes == false }.prefix(3).map { $0.q }
+            failedQ[k] = Rubric.checks(for: k).filter { c in !Self.navCountIDs.contains(c.id) }.filter { c in result.meters[k]?.checks.first { $0.id == c.id }?.yes == false }.prefix(3).map { Self.plainCheck[$0.id] ?? $0.q }
         }
         for (k, v) in lp { failedQ[k] = v }
-        for (k, v) in Pipeline.writerMeterFacts(meters: result.meters.filter { $0.value.applicable != false }, failed: failedQ, designerReason: designer?.reason) { sc[k] = v }
+        for (k, v) in Pipeline.writerMeterFacts(meters: result.meters.filter { $0.value.applicable != false }, failed: failedQ) { sc[k] = v }
         wf["meters"] = sc
         wf["feeling_facts"] = Self.feelingFacts(stats: stats, copy: facts.allCopy)
         let w: JSONValue? = await {
@@ -494,7 +527,7 @@ public struct Pipeline {
             return try? await Claude.call(keys: key, system: Prompts.write, content: [["type": "text", "text": str]], maxTokens: 900).json
         }()
         T.write = Date().timeIntervalSince(writeStart) * 1000
-        result.text = Self.texts(for: result, written: w, pageText: facts.allCopy)
+        result.text = Self.texts(for: result, written: w, pageText: facts.allCopy, overlayPresent: boxes.contains { $0.role == "overlay" })
         T.total = Date().timeIntervalSince(t0) * 1000
         result.timings = T
         if useCache, let h = hash { Pipeline.store(result, hash: h, dir: cacheDir) }
@@ -514,27 +547,31 @@ public struct Pipeline {
     }
 
     /// Tooltip text for every meter from the writer's reply (nil reply gives the fallback fixes and empty why lines).
-    static func texts(for r: RunResult, written w: JSONValue?, pageText: String = "") -> [String: MeterText] {
+    static func texts(for r: RunResult, written w: JSONValue?, pageText: String = "", overlayPresent: Bool = false) -> [String: MeterText] {
         var out: [String: MeterText] = [:]
-        // The designer's one reason belongs to the lowest designer meter only.
-        let owner = Meters.order.filter { r.meters[$0]?.applicable != false && (r.meters[$0]?.designer ?? 101) <= 90 }.min { (r.meters[$0]!.designer!) < (r.meters[$1]!.designer!) }
         for k in Meters.order {
             let score = k == "reading" ? Int((r.readingGrade.map { gradePoints($0) * 10 } ?? 100).rounded()) : (r.meters[k]?.score ?? 0)
             let failed = Rubric.checks(for: k).filter { c in r.meters[k]?.checks.first { $0.id == c.id }?.yes == false }
+            let failedIDs = (r.meters[k]?.checks ?? []).filter { !$0.yes && !navCountIDs.contains($0.id) }.map { $0.id }
             let arr = w?[k].array ?? []
-            var why = cleanWhy(clean(arr.count > 0 ? (arr[0].string ?? "") : ""), meter: k)
-            let hasDeduction = !failed.isEmpty || (r.meters[k]?.designer.map { $0 < 100 } ?? false)
-            let navOnly = !failed.isEmpty && failed.allSatisfy { navCountIDs.contains($0.id) }
-            let dr = k == owner ? (r.designerReason ?? "") : ""
-            let dedMain = !dr.isEmpty
+            let own = r.designerReasons?[k] ?? ""
+            let written = cleanWhy(clean(arr.count > 0 ? (arr[0].string ?? "") : ""), meter: k)
+            var why: String
             if score >= 100 { why = "" }
-            else if why.isEmpty || navOnly && !dedMain { why = fallbackWhy(score: score, failed: navOnly ? [] : failed, designer: r.meters[k]?.designer, designerReason: dr, meter: k) }
-            else if dedMain, !why.lowercased().contains("designer") {
-                let d = fallbackWhy(score: score, failed: [], designer: r.meters[k]?.designer, designerReason: dr, meter: k)
-                if !d.isEmpty, !d.hasPrefix(genericWhyPrefix), !why.contains(d) { why = why.hasSuffix(".") ? why + " " + d : why + ". " + d }
+            else if !failedIDs.isEmpty {
+                // Failed checks: the writer's sentence about them, else a plain sentence for the heaviest one.
+                why = written.isEmpty ? (layoutPlain[failedIDs[0]] ?? fallbackWhy(score: score, failed: failed.filter { !navCountIDs.contains($0.id) }, designer: nil, designerReason: "", meter: k)) : written
+            } else if let d = r.meters[k]?.designer, d < 100, !own.isEmpty {
+                // The only deduction is the designer's: that meter's own reason.
+                let c = cleanWhy(own, meter: k, topicFilter: false)
+                why = c.isEmpty ? fallbackWhy(score: score, failed: [], designer: d, designerReason: "", meter: k) : c
+            } else {
+                why = written.isEmpty ? fallbackWhy(score: score, failed: [], designer: r.meters[k]?.designer, designerReason: "", meter: k) : written
             }
             let problem = (arr.count > 2 ? (arr[2].bool ?? false) : false) || (k == "reading" && score < 85)
             if r.meters[k]?.applicable == false { out[k] = MeterText(why: "This doesn't apply to this kind of screen.", fix: ""); continue }
+            why = groundedWhy(why, meter: k, overlayPresent: overlayPresent || (r.vision["has_overlay"].bool ?? false) || (r.vision["has_competing_promo"].bool ?? false))
+            if k == "contrast" { why = contrastWhy(r, failedIDs: failedIDs, score: score, fallback: why) }
             out[k] = MeterText(why: why, fix: rubricFix(failed: failed, score: score, meter: k))
         }
         // Valence and Intensity are positions, not scores: a reason only. Reading gets a fix only above grade 9.
@@ -551,7 +588,7 @@ public struct Pipeline {
         var r = stored
         var sc: [String: Any] = [:]
         for k in Meters.order {
-            let failed = Rubric.checks(for: k).filter { c in !Self.navCountIDs.contains(c.id) }.filter { c in r.meters[k]?.checks.first { $0.id == c.id }?.yes == false }.prefix(3).map { $0.q }
+            let failed = Rubric.checks(for: k).filter { c in !Self.navCountIDs.contains(c.id) }.filter { c in r.meters[k]?.checks.first { $0.id == c.id }?.yes == false }.prefix(3).map { Self.plainCheck[$0.id] ?? $0.q }
             if k == "reading" { sc[k] = ["grade": r.readingGrade ?? 0, "score": Int(((r.readingGrade.map { Self.gradePoints($0) * 10 }) ?? 100).rounded())]; continue }
             sc[k] = ["score": r.meters[k]?.score ?? 0, "failed": Array(failed)]
         }

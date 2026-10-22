@@ -72,7 +72,7 @@ public enum OCR {
     public static func applyRoles(_ roles: JSONValue, to boxes: [TextBox]) -> [TextBox] {
         var out = boxes
         // logo is applied first so a box the model also called a heading keeps the heading role: one box, one role.
-        for role in ["logo", "heading", "subhead", "label", "nav", "button", "link", "demo", "legal"] {
+        for role in ["logo", "heading", "subhead", "label", "nav", "button", "link", "demo", "legal", "overlay"] {
             for v in roles[role].array {
                 if let i = v.int, out.indices.contains(i) { out[i].role = role }
             }

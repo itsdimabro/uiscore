@@ -61,6 +61,7 @@ final class AppModel: ObservableObject {
     /// Set when a click outside the card ends a title edit from outside the app; the field saves and stops editing.
     var commitEdit: (() -> Void)?
     private var editEnded = Date.distantPast
+    private var shownAt = Date.distantPast
     private var liveItem: HistoryItem?
     private var liveKey = ""
     /// Row identity per saved run, so a row keeps its id after the run is saved and a later run never flips it.
@@ -149,6 +150,7 @@ final class AppModel: ObservableObject {
 
     func show() {
         onShow()
+        shownAt = Date()
         if shown { return }
         DispatchQueue.main.async { [self] in withAnimation(T.open(0.42)) { shown = true } }
     }
@@ -161,7 +163,7 @@ final class AppModel: ObservableObject {
     func outsideClick() {
         if editing { commitEdit?(); return }
         if lightbox { closeLightbox(); return }
-        if Date().timeIntervalSince(editEnded) < 0.2 || !shown { return }
+        if Date().timeIntervalSince(editEnded) < 0.2 || Date().timeIntervalSince(shownAt) < 0.6 || !shown { return }
         close()
     }
 

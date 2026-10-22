@@ -88,13 +88,21 @@ public enum Applicability {
         return head + ", so it's " + effect + "."
     }
 
+    /// C6 (headline says plainly what the product is). An open-ended headline on a marketing home or landing page is
+    /// not a failure when the page demonstrates the product right away: the product on screen answers the question.
+    static func c6Holds(vote: Bool, context: PageContext, demonstrates: Bool) -> Bool {
+        vote || (demonstrates && context.outside && (context.location == "homepage" || context.location == "landing"))
+    }
+
     /// Checks that cannot be asked of this screen. They are left out of the meter and the other weights are scaled up.
     public static func notApplicable(kind: ScreenKind, pageType: String, facts f: PageFacts, context: PageContext = .unknown) -> Set<String> {
         var na = contextNotApplicable(context)
         for (id, ks) in kinds where !ks.contains(kind) { na.insert(id) }
         // The footer sits below the first screen of a landing page, so contact/privacy cannot be asked there.
         let footerKnown = kind == .document || (kind == .marketing && !pageType.lowercased().contains("landing"))
-        if !footerKnown { na.insert("T4") }
+        // A first-screen capture has no footer to judge: T4 is asked only when legal/footer text was detected.
+        let footerSeen = f.allBoxes.contains { $0.role == "legal" }
+        if !footerKnown || !footerSeen { na.insert("T4") }
         if f.navCount == 0 { na.formUnion(["h_nav_quiet", "f_nav", "f_navcount", "C4"]) }
         if f.primaryCount == 0 { na.formUnion(["C2", "C3", "C8", "h_cta_fold"]) }
         // Sign-in, forms and screens inside a product: the submit button sits below its fields by design, so the fold is not asked.

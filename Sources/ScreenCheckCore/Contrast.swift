@@ -104,6 +104,40 @@ public enum Contrast {
         return n == 0 || Double(same) / Double(n) >= 0.8
     }
 
+    /// True when the ring 8-20 px around the box is a photo or video frame: luminance spread across it is high.
+    /// Text measured against a photo has no single background, so it is left unmeasured rather than failed.
+    static func busyAround(_ px: Pixels, box b: TextBox) -> Bool {
+        var lums: [Double] = []
+        let x0 = Int(b.x), y0 = Int(b.y), x1 = Int(b.x + b.w), y1 = Int(b.y + b.h)
+        func add(_ x: Int, _ y: Int) {
+            guard x >= 0, y >= 0, x < px.width, y < px.height else { return }
+            let i = (y * px.width + x) * 4
+            lums.append(luminance(Int(px.data[i]), Int(px.data[i + 1]), Int(px.data[i + 2])) * 255)
+        }
+        for d in [8, 14, 20] {
+            for x in stride(from: x0, to: x1, by: max(1, (x1 - x0) / 24)) { add(x, y0 - d); add(x, y1 + d) }
+            for y in stride(from: y0, to: y1, by: max(1, (y1 - y0) / 6)) { add(x0 - d, y); add(x1 + d, y) }
+        }
+        guard lums.count >= 12 else { return false }
+        let m = lums.reduce(0, +) / Double(lums.count)
+        return (lums.reduce(0) { $0 + ($1 - m) * ($1 - m) } / Double(lums.count)).squareRoot() > 14
+    }
+
+    /// Share of the box's pixels that are ink (clearly different from its background). For one typeface it rises with stroke weight,
+    /// so a headline set heavier than the body reads as a higher number. Nil when the box cannot be sampled.
+    public static func inkDensity(_ px: Pixels, box b: TextBox) -> Double? {
+        guard let s = clusterSample(px, box: b) else { return nil }
+        let x0 = max(0, Int(b.x.rounded())), y0 = max(0, Int(b.y.rounded())), x1 = min(px.width, Int((b.x + b.w).rounded())), y1 = min(px.height, Int((b.y + b.h).rounded()))
+        let span = dist(s.fg, s.bg) * 0.5
+        var n = 0, ink = 0
+        for y in y0..<max(y0, y1) { for x in x0..<max(x0, x1) {
+            let i = (y * px.width + x) * 4
+            n += 1
+            if dist((Int(px.data[i]), Int(px.data[i + 1]), Int(px.data[i + 2])), s.bg) >= span { ink += 1 }
+        } }
+        return n == 0 ? nil : Double(ink) / Double(n)
+    }
+
     /// A filled button: the box's own background differs clearly from the page just outside it.
     public static func isFilled(_ px: Pixels, box b: TextBox) -> Bool {
         let x0 = max(0, Int(b.x.rounded())), y0 = max(0, Int(b.y.rounded()))
@@ -149,9 +183,11 @@ public enum Contrast {
     public static func report(_ px: Pixels?, boxes: [TextBox], expected: Int) -> ContrastReport {
         var out: [BoxContrast] = []
         for b in boxes {
-            let need = need(fontPx: b.fontPx, bold: b.bold)
-            if !b.onImage, let px, let s = clusterSample(px, box: b) {
-                out.append(BoxContrast(text: b.text, ratio: s.ratio, need: need, pass: s.ratio >= need, fg: hex(s.fg), bg: hex(s.bg)))
+            // Button labels are interface components: 3:1 (WCAG 1.4.11), not the 4.5:1 of running text.
+            let need = b.role == "button" ? min(3.0, need(fontPx: b.fontPx, bold: b.bold)) : need(fontPx: b.fontPx, bold: b.bold)
+            // Text under 1.5:1 is artwork (poster titles in a thumbnail, watermarks), not copy meant to be read: left unmeasured.
+            if !b.onImage, let px, let s = clusterSample(px, box: b), s.ratio >= 1.7, !busyAround(px, box: b) {
+                out.append(BoxContrast(text: b.text, ratio: s.ratio, need: need, pass: s.ratio >= need * 0.97, fg: hex(s.fg), bg: hex(s.bg)))
             } else {
                 out.append(BoxContrast(text: b.text, ratio: nil, need: need, pass: false, fg: nil, bg: nil))
             }

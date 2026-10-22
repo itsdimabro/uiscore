@@ -106,11 +106,11 @@ final class Pass2Tests: XCTestCase {
         XCTAssertFalse(w.contains("?"))
         XCTAssertTrue(w.hasSuffix("."))
         XCTAssertEqual(Pipeline.fallbackWhy(score: 63, failed: [], designer: 63, designerReason: "Balance is the lowest at 6: the weight leans left."), "The weight leans left.")
-        XCTAssertFalse(Pipeline.fallbackWhy(score: 83, failed: [], designer: nil, designerReason: "").isEmpty)
+        XCTAssertTrue(Pipeline.fallbackWhy(score: 83, failed: [], designer: nil, designerReason: "").isEmpty)   // nothing real to say: say nothing
         XCTAssertEqual(Pipeline.fallbackWhy(score: 100, failed: [], designer: 100, designerReason: ""), "")
     }
     func testDesignerDeductionNamedInEaseWhy() {
-        let r = stub(meters: ["ease": MeterResult(score: 75, lowConfidence: false, confidencePct: 100, checks: [], note: nil, designer: 75, applicable: nil)], designerReason: "The page is dense and the text is small.")
+        let r = stub(meters: ["ease": MeterResult(score: 75, lowConfidence: false, confidencePct: 100, checks: [], note: nil, designer: 75, applicable: nil)], designerReason: "The page is dense.")
         let t = Pipeline.texts(for: r, written: try! JSONValue.firstObject(in: "{\"ease\":[\"Too many words.\",\"\",1]}"))
         XCTAssertTrue(t["ease"]!.why.contains("dense"), t["ease"]!.why)
     }
@@ -128,6 +128,7 @@ final class Pass2Tests: XCTestCase {
     func stub(meters: [String: MeterResult], designerReason: String) -> RunResult {
         var r = RunResult(id: "s", createdAt: Date(), pageName: "P", imageWidth: 1, imageHeight: 1, meters: meters, feeling: [:], feelingLow: [:], feelingConfidencePct: [:], readingGrade: nil, readingWords: 0, text: [:], timings: Timings(), contrastDetail: nil, vision: .null, pixelStats: nil)
         r.designerReason = designerReason
+        r.designerReasons = designerReason.isEmpty ? nil : Dictionary(uniqueKeysWithValues: Designer.meters.map { ($0, designerReason) })
         return r
     }
 
@@ -157,13 +158,14 @@ final class Pass2Tests: XCTestCase {
         XCTAssertEqual(got, r)
     }
     func meterD(_ s: Int, _ d: Int?) -> MeterResult { MeterResult(score: s, lowConfidence: false, confidencePct: 100, checks: [], note: nil, designer: d, applicable: nil) }
-    func testDesignerReasonGoesToOneMeterOnly() {
-        let r = stub(meters: ["balance": meterD(63, 63), "ease": meterD(75, 75), "order": meterD(85, 85)], designerReason: "The headline runs over the gradient ribbon.")
-        let t = Pipeline.texts(for: r, written: nil)
-        let n = ["balance", "ease", "order"].filter { t[$0]!.why.contains("ribbon") }.count
-        XCTAssertEqual(n, 1)
-        XCTAssertTrue(t["balance"]!.why.contains("ribbon"))
-        for k in ["balance", "ease", "order"] { XCTAssertFalse(t[k]!.why.contains("overall read"), k); XCTAssertFalse(t[k]!.why.isEmpty, k) }
+    func testDesignerOnlyMeterShowsItsOwnReasonAndNoOthers() {
+        var r = stub(meters: ["balance": meterD(63, 63), "ease": meterD(75, 75), "order": meterD(85, 85)], designerReason: "")
+        r.designerReasons = ["balance": "The grid leans to the left.", "ease": "The page is dense.", "order": "The title is weak."]
+        let t = Pipeline.texts(for: r, written: try! JSONValue.firstObject(in: "{\"balance\":[\"Writer balance.\",\"\",1]}"))
+        XCTAssertEqual(t["balance"]!.why, "The grid leans to the left.")
+        XCTAssertEqual(t["ease"]!.why, "The page is dense.")
+        XCTAssertEqual(t["order"]!.why, "The title is weak.")
+        for k in ["balance", "ease", "order"] { XCTAssertFalse(t[k]!.why.hasPrefix(Pipeline.genericWhyPrefix), k) }
     }
     func testWhyLeadingFragmentAndRawCheckText() {
         XCTAssertEqual(Pipeline.cleanWhy("; the banner near the button cost points.", meter: "clarity"), "The banner near the button cost points.")
@@ -224,7 +226,7 @@ final class Pass2Tests: XCTestCase {
             XCTAssertFalse(c.fix.lowercased().contains(" or fewer.") && ["C4", "f_navcount"].contains(c.id), c.id)
             XCTAssertTrue(c.fix.isEmpty || c.fix.hasSuffix("."), c.id)
         }
-        for id in ["C4", "f_navcount", "C6", "T2", "T3", "E9", "E4", "C8"] { XCTAssertEqual(Rubric.checks.first { $0.id == id }!.fix, "", id) }
+        for id in ["C4", "f_navcount", "C6", "T2", "T3", "E9", "C8"] { XCTAssertEqual(Rubric.checks.first { $0.id == id }!.fix, "", id) }
     }
     func testNothingWorthChangingNeverShown() {
         XCTAssertEqual(Pipeline.cleanWhy("The weight leans left. Nothing is worth changing.", meter: "balance"), "The weight leans left.")
@@ -232,7 +234,7 @@ final class Pass2Tests: XCTestCase {
         let r = stub(meters: ["balance": meterD(80, nil)], designerReason: "")
         let t = Pipeline.texts(for: r, written: nil)
         XCTAssertFalse(t["balance"]!.why.lowercased().contains("worth changing"))
-        XCTAssertFalse(t["balance"]!.why.isEmpty)
+        XCTAssertTrue(t["balance"]!.why.isEmpty)
     }
     func testWhyDropsOtherMetersTopics() {
         XCTAssertEqual(Pipeline.cleanWhy("The weight sits on the right. The primary button is vague.", meter: "balance"), "The weight sits on the right.")
@@ -248,5 +250,73 @@ final class Pass2Tests: XCTestCase {
         let r = stub(meters: ["balance": MeterResult(score: 80, lowConfidence: false, confidencePct: 100, checks: [], note: nil, designer: 80, applicable: nil)], designerReason: "")
         let t = Pipeline.texts(for: r, written: try! JSONValue.firstObject(in: "{\"balance\":[\"The weight leans left.\",\"\",0]}"))
         XCTAssertEqual(t["balance"]!.why, "The weight leans left.")
+    }
+}
+
+final class CalibrationTests: XCTestCase {
+    func box(_ t: String, _ y: Double, _ px: Double, role: String = "body", bold: Bool = false) -> TextBox { TextBox(text: t, x: 40, y: y, w: 300, h: px, fontPx: px, bold: bold, role: role, onImage: false) }
+
+    func testContrastHasFourSubRubricsSummingTo100() {
+        let ids = Rubric.checks(for: "contrast").map { $0.id }
+        for id in ["c_aa", "c_size", "c_weight", "c_space"] { XCTAssertTrue(ids.contains(id), id) }
+        XCTAssertEqual(Rubric.checks(for: "contrast").reduce(0) { $0 + $1.w }, 100)
+    }
+    func testButtonLabelNeedsThreeToOne() {
+        var d = [UInt8](repeating: 255, count: 120 * 40 * 4)
+        for y in 0..<40 { for x in 0..<120 { let i = (y * 120 + x) * 4; let v: UInt8 = (x + y) % 3 == 0 && x > 10 && x < 100 && y > 10 && y < 30 ? 255 : 0x33; d[i] = v; d[i+1] = v; d[i+2] = v } }
+        let px = Pixels(width: 120, height: 40, data: d)
+        let b = TextBox(text: "Go now", x: 5, y: 5, w: 110, h: 30, fontPx: 14, bold: false, role: "button", onImage: false)
+        XCTAssertEqual(Contrast.report(px, boxes: [b], expected: 1).boxes[0].need, 3.0)
+    }
+    func testSizeContrastNeedsHeadlineWellAboveBody() {
+        let flat = [box("Headline words", 0, 18), box("A sentence of body text long enough", 40, 16), box("Another sentence of body text here", 70, 16)]
+        let big = [box("Headline words", 0, 48), box("A sentence of body text long enough", 70, 16), box("Another sentence of body text here", 100, 16)]
+        XCTAssertEqual(Scoring.codeAnswers(Scoring.facts(from: .null, textBoxes: flat), pixels: nil).answers["c_size"], false)
+        XCTAssertEqual(Scoring.codeAnswers(Scoring.facts(from: .null, textBoxes: big), pixels: nil).answers["c_size"], true)
+    }
+    func testGroupingAlignmentIsMinorAndMeaningIsScored() {
+        let cs = Layout.groupingChecks(GroupingMetrics())
+        XCTAssertEqual(cs.first { $0.id == "g_align" }?.weight, 10)
+        XCTAssertTrue(cs.contains { $0.id == "g_meaning" })
+        XCTAssertEqual(cs.reduce(0) { $0 + $1.weight }, 100)
+    }
+    func testAlignmentNamedOnlyWhenItIsTheOnlyFailure() {
+        func m(_ meaning: Bool?) -> [String] {
+            let b = (0..<8).map { TextBox(text: "word", x: 40 + Double($0 % 3) * 31, y: Double($0) * 22, w: 200, h: 16, fontPx: 16, bold: false, role: "body", onImage: false) }
+            return Layout.problems(pixels: nil, boxes: b, imageWidth: 800, meaning: meaning)["grouping"] ?? []
+        }
+        XCTAssertFalse(m(false).contains { $0.contains("left, right or centre") })
+    }
+    func testBalanceToleratesAsymmetricHero() {
+        var b = BalanceMetrics(); b.centroidX = -0.35; b.centroidY = 0.1; b.leftRight = 0.4; b.symmetry = 0.65
+        XCTAssertEqual(Layout.balanceScore(b), 100)
+    }
+    func testEaseNeverClaimsAbsoluteTextSize() {
+        XCTAssertEqual(Pipeline.groundedWhy("The body text is under 16 px. Lines run long.", meter: "ease", overlayPresent: false), "Lines run long.")
+        XCTAssertEqual(Pipeline.groundedWhy("The text is too small.", meter: "ease", overlayPresent: false), "")
+    }
+    func testNoClaimedElementThatIsAbsent() {
+        XCTAssertEqual(Pipeline.groundedWhy("Ad-like items clutter the page.", meter: "trust", overlayPresent: false), "")
+        XCTAssertEqual(Pipeline.groundedWhy("A cookie banner competes with the button.", meter: "clarity", overlayPresent: true), "A cookie banner competes with the button.")
+        XCTAssertEqual(Pipeline.groundedWhy("Groups lack a card or panel.", meter: "grouping", overlayPresent: false), "")
+        XCTAssertEqual(Pipeline.groundedWhy("Items do not line up on a shared edge.", meter: "grouping", overlayPresent: false), "")
+    }
+    func testContrastExplainsItsFailures() {
+        let r = RunResult.placeholder
+        let w = Pipeline.contrastWhy(r, failedIDs: ["c_size", "c_weight"], score: 72, fallback: "")
+        XCTAssertTrue(w.contains("larger") && w.contains("heavier"), w)
+        XCTAssertFalse(Pipeline.contrastWhy(r, failedIDs: [], score: 100, fallback: "").isEmpty)
+    }
+    func testDemoTextIsNotReadingLoadAndOverlayLeavesLayout() {
+        let boxes = [box("Real copy here", 0, 16), box("demo words", 30, 12, role: "demo"), box("cookie words", 60, 12, role: "overlay")]
+        XCTAssertFalse(Scoring.facts(from: .null, textBoxes: boxes).allCopy.contains("demo words"))
+        XCTAssertEqual(Scoring.content(boxes).count, 1)
+    }
+    func testDemoAndLogosCountAsTrust() {
+        var f = Scoring.facts(from: .null, textBoxes: [])
+        f.allBoxes = (0..<5).map { box("logo\($0)", Double($0) * 30, 14, role: "logo") }
+        XCTAssertEqual(Scoring.visionAnswers(f, stats: nil)["T2"], true)
+        f.allBoxes = (0..<4).map { box("ui\($0)", Double($0) * 30, 12, role: "demo") }
+        XCTAssertEqual(Scoring.visionAnswers(f, stats: nil)["T3"], true)
     }
 }

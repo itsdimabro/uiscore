@@ -52,13 +52,11 @@ final class CompNeoTests: XCTestCase {
         XCTAssertEqual(Pipeline.finalFix("Nothing to fix", score: 88, problem: false, failed: [], meter: "balance"), "")
     }
 
-    func testDesignerOnlyDeductionReachesTheWriter() {
+    func testWriterNeverSeesDesignerReasons() {
         func m(_ s: Int, _ d: Int?) -> MeterResult { MeterResult(score: s, lowConfidence: false, confidencePct: 100, checks: [], note: nil, designer: d) }
-        let facts = Pipeline.writerMeterFacts(meters: ["balance": m(88, 88), "contrast": m(100, nil)], failed: [:], designerReason: "The card floats a little low on the page.")
-        let bal = facts["balance"] as? [String: Any]
-        XCTAssertEqual(bal?["score"] as? Int, 88)
-        XCTAssertEqual(bal?["deduction"] as? String, "The card floats a little low on the page.")
-        XCTAssertNil((facts["contrast"] as? [String: Any])?["deduction"])
+        let facts = Pipeline.writerMeterFacts(meters: ["balance": m(88, 88), "contrast": m(100, nil)], failed: [:])
+        XCTAssertNil((facts["balance"] as? [String: Any])?["deduction"])
+        XCTAssertEqual((facts["balance"] as? [String: Any])?["score"] as? Int, 88)
     }
 
     func testNeverAdviseMovingSubmitUp() {

@@ -55,6 +55,7 @@ public struct RunResult: Codable, Identifiable {
     public var pageName: String
     public var imageWidth: Int
     public var imageHeight: Int
+    public var designerReasons: [String: String]? = nil   // the designer's one sentence per meter
     public var designerReason: String? = nil       // the designer's main reason, one sentence
     public var meters: [String: MeterResult]       // contrast, grouping, balance, order, familiar, ease, clarity, trust
     public var feeling: [String: Int]              // vv vi cv ci (0-100)

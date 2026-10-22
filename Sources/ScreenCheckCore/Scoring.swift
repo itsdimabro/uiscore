@@ -15,6 +15,10 @@ public struct PageFacts {
     public var unmeasuredShare: Double = 0   // share of text boxes sitting on a gradient, photo or busy area
     public var primaryText: String = ""
     public var primaryCount: Int = 0         // ids the model named as the primary button
+    /// The page shows the product itself: a product UI or person photo, or a mockup (3+ demo text boxes).
+    public var demonstratesProduct: Bool {
+        (vision["real_imagery"].bool ?? false) || allBoxes.filter { $0.role == "demo" }.count >= 3
+    }
 }
 
 public enum Scoring {
@@ -39,7 +43,9 @@ public enum Scoring {
         return Int(h * 60 / 30) % 12
     }
 
-    static func content(_ boxes: [TextBox]) -> [TextBox] { boxes.filter { !["demo", "logo"].contains($0.role) } }
+    /// Roles that are not part of the page's own layout: mockup text, logos, and transient overlays (consent bars, chat bubbles).
+    static let nonPage: Set<String> = ["demo", "logo", "overlay"]
+    static func content(_ boxes: [TextBox]) -> [TextBox] { boxes.filter { !nonPage.contains($0.role) } }
     /// The biggest text is the headline (by role, or by dominating the median size). Measured, not asked.
     static func firstIsHeadline(_ boxes: [TextBox]) -> Bool {
         let c = content(boxes)
@@ -53,14 +59,16 @@ public enum Scoring {
         guard !c.isEmpty else { return 0 }
         let med = c.map { $0.fontPx }.sorted()[c.count / 2]
         let big = c.filter { $0.fontPx >= 1.4 * med }.sorted { $0.y < $1.y }
-        var n = 0
+        var tiers: [(px: Double, bold: Bool)] = []
         var prev: TextBox? = nil
         for b in big {
             // A headline wrapped over several lines is one emphasised element.
             if let p = prev, b.y - (p.y + p.h) < p.h * 1.2, abs(b.fontPx - p.fontPx) <= p.fontPx * 0.25, abs((b.x + b.w / 2) - (p.x + p.w / 2)) < max(p.w, b.w) * 0.6 || abs(b.x - p.x) < 12 { prev = b; continue }
-            n += 1; prev = b
+            // A repeated component (eight card titles in one style) is one emphasis tier, not eight shouts.
+            if !tiers.contains(where: { abs($0.px - b.fontPx) <= $0.px * 0.12 && $0.bold == b.bold }) { tiers.append((b.fontPx, b.bold)) }
+            prev = b
         }
-        return n
+        return tiers.count
     }
 
     /// Short labels stacked on one left edge (8+ of them): a menu or link list. Returns how many items sit in such columns.
@@ -75,16 +83,19 @@ public enum Scoring {
     }
 
     static let verbs: Set<String> = ["sign", "get", "start", "try", "join", "buy", "shop", "download", "learn", "see", "book", "request", "contact", "create", "log", "view", "watch", "subscribe", "add", "order", "open", "explore", "build", "install", "request", "schedule", "talk", "read", "register"]
-    static let generic: Set<String> = ["click here", "learn more", "submit", "more", "read more"]
+    static let generic: Set<String> = ["click here", "submit", "more", "read more"]
     static let contactWords = ["contact", "privacy", "terms", "address", "phone", "support", "legal"]
 
     /// `textBoxes` are OCR boxes with roles applied; counts come from them, not from the model.
     public static func facts(from v: JSONValue, textBoxes: [TextBox]) -> PageFacts {
         let boxes = textBoxes   // every OCR box counts; model role labels never change a count
-        let copy = boxes.map { $0.text }.joined(separator: "\n")
+        // Product mockup text is artwork, not page copy: it is no reading load and no tone signal.
+        let copy = boxes.filter { $0.role != "demo" }.map { $0.text }.joined(separator: "\n")
         // Link lists are found by geometry too: the model's nav/link lists vary between runs on a cluttered page.
         let col = linkColumnCount(textBoxes.filter { !["demo", "logo"].contains($0.role) })
-        let nav = max(textBoxes.filter { $0.role == "nav" }.count, col)
+        // One box the model calls "nav" flips between runs and is not a navigation; it takes two or a link column.
+        let navRole = textBoxes.filter { $0.role == "nav" }.count
+        let nav = max(navRole >= 2 ? navRole : 0, col)
         let clickable = textBoxes.filter { ["nav", "button", "link"].contains($0.role) }
         return PageFacts(boxes: boxes, allCopy: copy, options: max(clickable.count, col),
                          textItemCount: textBoxes.count, elementCount: textBoxes.count, navCount: nav,
@@ -130,11 +141,16 @@ public enum Scoring {
         a["E5"] = (f.boxes.map { $0.text.count }.max() ?? 0) <= 80
         let readable = content(f.boxes).filter { $0.text.filter { $0.isLetter }.count >= 3 }
         let chars = readable.reduce(0) { $0 + $1.text.count }
-        a["E9"] = chars == 0 || Double(readable.filter { $0.fontPx < 11.5 }.reduce(0) { $0 + $1.text.count }) / Double(chars) <= 0.05
-        a["E10"] = bodyTextPx(f.boxes).map { $0 >= (appScreen ? 13 : 16) } ?? false
+        // Sizes are judged against each other, never against a pixel count: a screenshot does not say how large it is displayed.
+        let readablePx = readable.filter { $0.role != "legal" }.map { $0.fontPx }.sorted()
+        let bodyPx = bodyTextPx(f.boxes) ?? (readablePx.isEmpty ? nil : readablePx[readablePx.count / 2])
+        a["E9"] = chars == 0 || bodyPx == nil || Double(readable.filter { $0.role != "legal" && $0.fontPx < 0.6 * bodyPx! }.reduce(0) { $0 + $1.text.count }) / Double(chars) <= 0.05
+        let headPx = content(f.boxes).map { $0.fontPx }.max()
+        a["E10"] = (bodyTextPx(f.boxes).flatMap { b in headPx.map { $0 / b <= 7 } }) ?? true
         a["C4"] = f.navCount <= 7
         a["C5"] = f.options <= 15
-        a["C9"] = !f.labels.contains { generic.contains($0.lowercased().trimmingCharacters(in: .whitespaces)) }
+        let labs = f.labels.map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+        a["C9"] = !labs.contains { generic.contains($0) } && labs.filter { $0 == "learn more" }.count < 3
         let low = (f.allCopy + " " + f.labels.joined(separator: " ")).lowercased()
         a["T4"] = contactWords.contains { low.contains($0) }
 
@@ -142,16 +158,25 @@ public enum Scoring {
         // Logos and product-mockup/decorative text are artwork, not page copy. A role label can only remove a box from
         // this meter, never add one, so a flipped label moves the score by at most that one box.
         // Rotated or curved text (very tall box for few characters) is decorative and cannot be measured reliably.
-        let cb = f.boxes.filter { !["demo", "logo"].contains($0.role) && $0.text.filter { $0.isLetter }.count >= 3 && $0.w / max(1, $0.h) / Double(max(1, $0.text.count)) >= 0.2 }
+        let cb = f.boxes.filter { !nonPage.contains($0.role) && $0.text.filter { $0.isLetter }.count >= 3 && $0.w / max(1, $0.h) / Double(max(1, $0.text.count)) >= 0.2 }
         let rep = Contrast.report(pixels, boxes: cb, expected: cb.count)
         let measuredBoxes = rep.boxes.filter { $0.ratio != nil }
         let mIdx = rep.boxes.indices.filter { rep.boxes[$0].ratio != nil }
         let mCount = Double(max(1, measuredBoxes.count))
         let unmeasuredShare = rep.expected == 0 ? 1 : Double(rep.expected - rep.measured) / Double(rep.expected)
         a["c_cover"] = unmeasuredShare <= 0.3 && rep.measured > 0
-        a["c_aa"] = Double(measuredBoxes.count - rep.passing) <= max(1, (mCount * 0.05).rounded(.down))
+        // Colour contrast: share of measured text reaching its WCAG minimum (AA 4.5:1, 3:1 for large text and button labels).
+        let passShare = Double(measuredBoxes.filter { $0.pass }.count) / mCount
+        a["c_aa"] = passShare >= 0.95 || measuredBoxes.count - measuredBoxes.filter { $0.pass }.count <= 1
+        a["c_most"] = passShare >= 0.8
         a["c_none_fail"] = !measuredBoxes.isEmpty && measuredBoxes.allSatisfy { $0.pass }
-        a["c_floor"] = (rep.minRatio ?? 0) >= 3.0
+        a["c_floor"] = (rep.minRatio ?? 3) >= 2.9
+        // Size, weight and spacing contrast: how far the headline stands apart from the body, and the gaps between groups from the gaps inside them.
+        let bodyForSize = bodyTextPx(f.boxes) ?? { let m = cb.map { $0.fontPx }.sorted(); return m.isEmpty ? nil : m[m.count / 2] }()
+        let topPx = cb.map { $0.fontPx }.max()
+        a["c_size"] = (bodyForSize.flatMap { b in topPx.map { $0 / max(1, b) >= 1.8 } }) ?? true
+        a["c_weight"] = weightContrast(cb, pixels: pixels)
+        a["c_space"] = spaceContrast(cb, pixels: pixels)
         a["c_small"] = !cb.isEmpty && cb.allSatisfy { $0.fontPx >= 12 }
         let smallM = mIdx.filter { cb[$0].fontPx < 18 }
         a["c_aaa"] = smallM.isEmpty ? true : Double(smallM.filter { (rep.boxes[$0].ratio ?? 0) >= 7 }.count) / Double(smallM.count) >= 0.5
@@ -165,6 +190,24 @@ public enum Scoring {
         var note: String? = nil
         if !a["c_cover"]! { note = "only \(rep.measured) of \(rep.expected) text items could be measured" }
         return (a, rep, note)
+    }
+
+    /// Weight contrast: the headline's ink density against the body's. Ink share per box rises with stroke weight, so a heavier headline reads higher.
+    /// Unmeasurable text (photo, gradient) or no body text passes: absence of evidence is not a fault.
+    static func weightContrast(_ boxes: [TextBox], pixels: Pixels?) -> Bool {
+        guard let px = pixels, let head = boxes.max(by: { $0.fontPx < $1.fontPx }), head.text.count >= 3 else { return true }
+        let body = boxes.filter { $0.text.count >= 15 && $0.fontPx < head.fontPx * 0.6 }
+        let hd = Contrast.inkDensity(px, box: head)
+        let bd = body.prefix(12).compactMap { Contrast.inkDensity(px, box: $0) }.sorted()
+        guard let h = hd, !bd.isEmpty else { return true }
+        let b = bd[bd.count / 2]
+        return head.bold || h >= b * 1.12
+    }
+    /// Spacing contrast: groups are set apart by more space than their contents (Gestalt proximity). Needs 4+ text boxes to judge.
+    static func spaceContrast(_ boxes: [TextBox], pixels: Pixels?) -> Bool {
+        guard boxes.count >= 4 else { return true }
+        let g = Layout.grouping(boxes, pixels: nil, imageWidth: pixels?.width ?? 1280)
+        return g.groups < 2 || g.separation >= 1.5
     }
 
     static let positive = ["love", "simple", "easy", "free", "better", "great", "clear", "fast", "save", "grow", "happy", "best", "enjoy", "welcome", "thanks", "secure", "trusted"]
@@ -237,11 +280,14 @@ public enum Scoring {
         // The promo flag flips between runs on a wall of stickers and banners; a page that is both "many blocks" and
         // "many emphasised items" always has competing promos, so that is answered from the stable enums.
         let promo = flag("has_competing_promo", false) || (word("blocks") == "many" && word("emphasis") == "many")
-        a["C8"] = !flag("has_overlay", false) && !promo
+        // Consent bars and chat bubbles are transient overlays, not competing promos.
+        a["C8"] = !promo
         a["T1"] = word("logo_position") != "none" && word("logo_position") != ""
-        a["T2"] = flag("has_proof", false)
-        a["T3"] = flag("real_imagery", false)
-        a["T5"] = !flag("has_overlay", false) && !promo
+        // Customer logos (a strip of 3+ logo boxes beyond the site's own) are proof; a product mockup is demonstration (Bencivenga: proof includes demonstration).
+        let logoCount = f.allBoxes.filter { $0.role == "logo" }.count, demoCount = f.allBoxes.filter { $0.role == "demo" }.count
+        a["T2"] = flag("has_proof", false) || logoCount >= 4
+        a["T3"] = flag("real_imagery", false) || demoCount >= 3
+        a["T5"] = !promo
         a["E12"] = word("fonts") != "three_plus"
         a["E13"] = word("accent_colors") != "three_plus"
         a["T9"] = !flag("has_dated_cues", false) && !flag("has_layout_error", false) && flag("images_ok", true)
