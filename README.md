@@ -4,7 +4,10 @@ A Mac menu-bar app that scores the design of any screenshot.
 
 Take a screenshot or copy an image, press **Command + Shift + V**, and a few seconds later the card shows how the screen looks and reads.
 
-![Welcome](docs/images/step1.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/card-dark.png">
+  <img alt="UIScore card for the Dropbox homepage: Score 90, with the Hierarchy tooltip open" src="docs/images/card-light.png">
+</picture>
 
 ## What it scores
 
