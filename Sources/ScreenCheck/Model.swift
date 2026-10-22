@@ -195,7 +195,7 @@ final class AppModel: ObservableObject {
     func showStored(_ r: RunResult, image: URL) {
         instant = false
         current = r; currentImage = image; textPending = !r.textComplete; phase = .ready; ready = Meters.allReady; editing = false
-        if !History.exists(id: r.id) { try? History.save(r, image: image) }
+        if !History.exists(id: r.id) { saveToHistory(r, image: image) }
         liveItem = nil
         reloadHistory()
         show()
@@ -203,12 +203,18 @@ final class AppModel: ObservableObject {
 
     /// Writes the missing tooltip text of a stored run; the scores on the card are not touched.
     private func completeText(_ r: RunResult, image: URL, token: UUID) async {
-        guard let done = try? await Pipeline(keys: KeyStore.keys()).run(imageURL: image) else { return }
+        let done: RunResult
+        do { done = try await Pipeline(keys: KeyStore.keys()).run(imageURL: image) }
+        catch {
+            guard runToken == token else { return }
+            showFailure(error, context: "writing the tooltip text")
+            return
+        }
         guard runToken == token else { return }
         var f = done
         if let n = customName { f.pageName = n }
         withAnimation(T.open(0.4)) { current = f; textPending = !f.textComplete }
-        if f.textComplete { try? History.save(f, image: image); reloadHistory() }
+        if f.textComplete { saveToHistory(f, image: image); reloadHistory() }
     }
 
     func checkLatest(imageOverride: URL? = nil) {
@@ -219,9 +225,8 @@ final class AppModel: ObservableObject {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                // 1. Look the image up by the hash of its bytes (results cache, then saved runs) before any loading state.
                 var quick: ScreenshotFinder.Found?
-                if let o = imageOverride { quick = ScreenshotFinder.Found(url: o, fromClipboard: false) } else { quick = await ScreenshotFinder.find(wait: false) }
+                if let o = imageOverride { quick = ScreenshotFinder.Found(url: o, fromClipboard: false) } else { quick = await ScreenshotFinder.find(clipboard: ClipboardWatcher.shared, wait: false) }
                 guard self.runToken == token else { return }
                 if let q = quick {
                     let hit = await Task.detached(priority: .userInitiated) { Pipeline.lookup(imageURL: q.url) }.value
@@ -232,12 +237,11 @@ final class AppModel: ObservableObject {
                         return
                     }
                 }
-                // 2. Not seen before: the skeleton shows only until the first value exists.
                 self.currentImage = nil; self.instant = false; self.beginLive()
                 withAnimation(T.open()) { self.phase = .loading; self.textPending = false; self.current = nil; self.ready = [] }
                 self.show()
                 let found: ScreenshotFinder.Found?
-                if imageOverride != nil { found = quick } else { found = await ScreenshotFinder.find() }
+                if imageOverride != nil { found = quick } else { found = await ScreenshotFinder.find(clipboard: ClipboardWatcher.shared) }
                 guard self.runToken == token else { return }
                 guard let url = imageOverride ?? found?.url else { throw PipelineError.noScreenshot }
                 self.currentImage = url; self.setLiveImage(url)
@@ -259,7 +263,7 @@ final class AppModel: ObservableObject {
                 })
                 guard self.runToken == token else { return }
                 let final = apply(result)
-                try? History.save(final, image: url)
+                saveToHistory(final, image: url)
                 withAnimation(T.open(0.4)) { self.current = final; self.textPending = false; self.ready = Meters.allReady }
                 self.mark("all values", t0)
                 self.liveItem = nil; self.reloadHistory()
@@ -268,11 +272,27 @@ final class AppModel: ObservableObject {
                 self.liveItem = nil; self.reloadHistory()
             } catch {
                 guard self.runToken == token else { return }
-                let e = error as? PipelineError
-                let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                withAnimation(T.open()) { self.phase = .error(msg, e?.isRetryable ?? true); self.textPending = false; self.liveItem = nil; self.reloadHistory() }
-                self.show()
+                self.showFailure(error, context: "scoring")
             }
         }
     }
+
+    /// Logs the failure and shows the card's error state, which offers a retry when the error allows one.
+    private func showFailure(_ error: Error, context: String) {
+        FileHandle.standardError.write(Data("UIScore: \(context) failed: \(error)\n".utf8))
+        let retryable = (error as? PipelineError)?.isRetryable ?? true
+        let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        withAnimation(T.open()) { phase = .error(msg, retryable); textPending = false; liveItem = nil; reloadHistory() }
+        show()
+    }
+
+    private func saveToHistory(_ r: RunResult, image: URL) {
+        do { try History.save(r, image: image) }
+        catch { showFailure(HistorySaveError(underlying: error), context: "saving to History") }
+    }
+}
+
+private struct HistorySaveError: LocalizedError {
+    let underlying: Error
+    var errorDescription: String? { "I could not save this result to History. Check that your disk has room, then try again." }
 }

@@ -38,9 +38,8 @@ struct CardView: View {
     }
 }
 
-/// The shadow is its own shape behind the card, blurred from the card's outline alone. It used to be applied to the clipped group
-/// that also holds the sliding history column, the lightbox and the scale/opacity animation, so it was rasterised with whatever
-/// that group's bounds were at that moment. Now it never depends on them.
+/// The shadow is its own shape behind the card, blurred from the card's outline alone, so it never depends on the bounds of the
+/// clipped group that holds the history column, the lightbox and the scale/opacity animation.
 struct CardShadow: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 22, style: .continuous).fill(T.card)

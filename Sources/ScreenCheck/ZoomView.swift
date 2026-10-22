@@ -42,7 +42,6 @@ final class ZoomView: NSView {
     private func clampScale(_ s: CGFloat) -> CGFloat { min(max(s, fitScale * 0.5), 32) }
     private func apply(animated: Bool = false) {
         guard let i = image else { return }
-        // Never pan the image fully out of view.
         let w = CGFloat(i.width) * scale, h = CGFloat(i.height) * scale
         let maxX = max(0, (w - 40) / 2 / scale + CGFloat(i.width) / 2 - CGFloat(i.width) / 2)
         _ = maxX
@@ -63,7 +62,6 @@ final class ZoomView: NSView {
     private func zoom(by f: CGFloat, at p: CGPoint) {
         let old = scale, new = clampScale(old * f)
         guard new != old else { return }
-        // keep the image pixel under the cursor fixed
         let px = center.x + (p.x - bounds.midX) / old, py = center.y + (p.y - bounds.midY) / old
         scale = new
         center = CGPoint(x: px - (p.x - bounds.midX) / new, y: py - (p.y - bounds.midY) / new)

@@ -37,12 +37,11 @@ public struct MeterText: Codable, Equatable {
 
 public struct Timings: Codable {
     public var visionFields: Double = 0
-    public var visionText: Double = 0
     public var ocr: Double = 0
     public var vision: Double = 0      // wall time of both vision calls together
     public var jev: Double = 0
     public var code: Double = 0
-    public var scoresFirst: Double = 0 // from start to scores ready
+    public var scoresFirst: Double = 0
     public var write: Double = 0
     public var total: Double = 0
     public var firstValue: Double? = nil // from start to the first value shown
@@ -55,16 +54,16 @@ public struct RunResult: Codable, Identifiable {
     public var pageName: String
     public var imageWidth: Int
     public var imageHeight: Int
-    public var designerReasons: [String: String]? = nil   // the designer's one sentence per meter
-    public var designerReason: String? = nil       // the designer's main reason, one sentence
-    public var meters: [String: MeterResult]       // contrast, grouping, balance, order, familiar, ease, clarity, trust
+    public var designerReasons: [String: String]? = nil
+    public var designerReason: String? = nil
+    public var meters: [String: MeterResult]
     public var feeling: [String: Int]              // vv vi cv ci (0-100)
     public var feelingLow: [String: Bool]          // v / a
     public var feelingConfidencePct: [String: Int]
     public var readingGrade: Int?                  // 1-12; above 12 is stored as 12 with readingGradeCapped true
     public var readingGradeCapped: Bool? = nil
     public var readingWords: Int
-    public var text: [String: MeterText]           // filled after scores
+    public var text: [String: MeterText]
     public var timings: Timings
     public var contrastDetail: ContrastReport?
     public var vision: JSONValue

@@ -69,7 +69,6 @@ public struct PixelStats: Codable, Equatable {
         st.warmPct = warm / sampled
         st.greenPct = green / sampled
         st.coolShare = colored > 0 ? cool / colored : 0
-        // hue families: adjacent buckets that each hold >= 0.5% merge into one family
         let on = buckets.map { $0 / sampled >= 0.005 }
         var fam = 0
         for i in 0..<12 where on[i] && !on[(i + 11) % 12] { fam += 1 }
@@ -82,7 +81,6 @@ public struct PixelStats: Codable, Equatable {
             let n = ids.reduce(0) { $0 + buckets[$1] }
             st.accentSat = n > 0 ? ids.reduce(0) { $0 + satSum[$1] } / n : 0
         }
-        // empty cells
         var cells = 0, empty = 0
         for cy in stride(from: 0, to: h - 15, by: 16) { for cx in stride(from: 0, to: w - 15, by: 16) {
             cells += 1
@@ -96,7 +94,6 @@ public struct PixelStats: Codable, Equatable {
             } }
             if ok { empty += 1 }
         } }
-        // colored blocks: 16px cells whose center is clearly colored, joined 4-way, blocks of 4+ cells
         let gw = w / 16, gh = h / 16
         var colCell = [Bool](repeating: false, count: max(1, gw * gh))
         for cy in 0..<gh { for cx in 0..<gw {

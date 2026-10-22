@@ -3,7 +3,7 @@ import Foundation
 /// Balance and Alignment measured from pixels and OCR boxes. No model is called; same image, same numbers.
 public struct BalanceMetrics: Codable, Equatable {
     public var centroidX: Double = 0    // visual-weight centroid, -1 (left edge) ... +1 (right edge), 0 = centre
-    public var centroidY: Double = 0    // -1 top ... +1 bottom
+    public var centroidY: Double = 0
     public var leftRight: Double = 1    // min(left, right) / max(left, right) weight, 1 = even
     public var topBottom: Double = 1
     public var symmetry: Double = 1     // mirror similarity of the weight map, 1 = identical halves
@@ -13,8 +13,8 @@ public struct BalanceMetrics: Codable, Equatable {
 public struct AlignmentMetrics: Codable, Equatable {
     public var boxes: Int = 0
     public var alignedShare: Double = 1   // share of text boxes sharing a left edge, right edge or centre line with another box
-    public var leftLines: Int = 0         // left-edge lines holding 3+ boxes
-    public var topLinesShare: Double = 0  // share of boxes on the 3 busiest alignment lines
+    public var leftLines: Int = 0
+    public var topLinesShare: Double = 0
     public var gapRegularity: Double = 1  // share of vertical gaps within a stack that match the stack's typical gap
     public init() {}
 }
@@ -24,7 +24,6 @@ public enum Layout {
     /// Returned as a row-major grid (rows x cols).
     public static func weightGrid(_ px: Pixels, cell: Int = 16) -> (w: [Double], cols: Int, rows: Int) {
         let cols = max(1, px.width / cell), rows = max(1, px.height / cell)
-        // Page background = most common colour (5 bits per channel) over a 2 px sampling.
         var counts: [Int: (n: Int, r: Int, g: Int, b: Int)] = [:]
         for y in stride(from: 0, to: px.height, by: 2) { for x in stride(from: 0, to: px.width, by: 2) {
             let i = (y * px.width + x) * 4
@@ -120,7 +119,7 @@ public enum Layout {
 public struct GroupingMetrics: Codable, Equatable {
     public var boxes: Int = 0
     public var groups: Int = 0              // clusters after cutting gaps of 1.5x the typical gap or more
-    public var groupedShare: Double = 0     // share of boxes inside a group of 2+ boxes
+    public var groupedShare: Double = 0
     public var ambiguousShare: Double = 0   // share of gaps between 1.2x and 1.5x the typical gap (neither within nor between)
     public var separation: Double = 1       // median between-group gap / typical within-group gap
     public var regionShare: Double = 0      // share of boxes sitting on a non-page background
@@ -293,10 +292,6 @@ extension Layout {
     /// Mirror symmetry is scored but never named as a problem: asymmetric app layouts are balanced.
     public static func balanceScore(_ m: BalanceMetrics) -> Int {
         (abs(m.centroidX) <= 0.4 ? 30 : 0) + (abs(m.centroidY) <= 0.5 ? 20 : 0) + (m.leftRight >= 0.33 ? 30 : 0) + (m.symmetry >= 0.6 ? 20 : 0)
-    }
-    /// Alignment 0-100: 50%+ of boxes sit on an alignment line of 3+ boxes (30), the 3 busiest lines hold 35%+ of boxes (45), 40%+ of stack gaps repeat (25).
-    public static func alignmentScore(_ m: AlignmentMetrics) -> Int {
-        (m.alignedShare >= 0.5 ? 30 : 0) + (m.topLinesShare >= 0.35 ? 45 : 0) + (m.gapRegularity >= 0.4 ? 25 : 0)
     }
     /// Boxes grouping and balance text may use: no logos, and nothing labelled demo or sitting inside the area the demo boxes span.
     /// The model's demo list wobbles by a box or two between runs; the span it covers does not.

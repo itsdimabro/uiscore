@@ -1,9 +1,8 @@
 import Foundation
 import Security
-import AppKit
 
 public enum ScreenshotFinder {
-    static let exts: Set<String> = ["png", "jpg", "jpeg", "heic"]
+    public static let exts: Set<String> = ["png", "jpg", "jpeg", "heic"]
 
     public static func screenshotFolder() -> URL {
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
@@ -52,14 +51,14 @@ public enum ScreenshotFinder {
     static func mtime(_ u: URL) -> Date? { (try? u.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate }
 
     /// The newest image (screenshot file or clipboard image). Waits up to 1.5 s for a just-taken screenshot file to appear.
-    public static func find(wait: Bool = true) async -> Found? {
+    public static func find(clipboard: ClipboardSource, wait: Bool = true) async -> Found? {
         let folder = screenshotFolder()
-        let watcher = ClipboardWatcher.shared
+        let watcher = clipboard
         let start = Date()
         while true {
             watcher.poll()
             let shot = newest(in: folder)
-            let choice = pick(screenshot: shot.flatMap(mtime), clipboardHasImage: ClipboardWatcher.hasImage(), clipboardChanged: watcher.changedAt)
+            let choice = pick(screenshot: shot.flatMap(mtime), clipboardHasImage: watcher.hasImage(), clipboardChanged: watcher.changedAt)
             let fresh: Bool = {
                 switch choice {
                 case .screenshot: return Date().timeIntervalSince(shot.flatMap(mtime) ?? .distantPast) < 20
@@ -70,7 +69,7 @@ public enum ScreenshotFinder {
             if fresh || !wait || Date().timeIntervalSince(start) >= 1.5 {
                 switch choice {
                 case .screenshot: return shot.map { Found(url: $0, fromClipboard: false) }
-                case .clipboard: return ClipboardWatcher.imageFile().map { Found(url: $0, fromClipboard: true) }
+                case .clipboard: return watcher.imageFile().map { Found(url: $0, fromClipboard: true) }
                 case .none: return nil
                 }
             }
@@ -79,52 +78,13 @@ public enum ScreenshotFinder {
     }
 }
 
-/// Notes when the clipboard last changed to an image. Only an integer is polled; image data is read at shortcut time.
-public final class ClipboardWatcher {
-    public static let shared = ClipboardWatcher()
-    static let imageTypes: [NSPasteboard.PasteboardType] = [.png, .tiff, .init("public.jpeg"), .init("public.heic"), .init("org.webmproject.webp")]
-    public private(set) var changedAt: Date?
-    private var count = NSPasteboard.general.changeCount
-    private var timer: Timer?
-
-    public func start() {
-        guard timer == nil else { return }
-        count = NSPasteboard.general.changeCount
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.poll() }
-    }
-
-    public func poll() {
-        let c = NSPasteboard.general.changeCount
-        guard c != count else { return }
-        count = c
-        changedAt = Self.hasImage() ? Date() : nil
-    }
-
-    static func fileImageURL() -> URL? {
-        let opts: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        let urls = NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: opts) as? [URL] ?? []
-        return urls.first { ScreenshotFinder.exts.contains($0.pathExtension.lowercased()) || $0.pathExtension.lowercased() == "webp" }
-    }
-
-    public static func hasImage() -> Bool {
-        let types = NSPasteboard.general.types ?? []
-        return imageTypes.contains { types.contains($0) } || fileImageURL() != nil
-    }
-
-    /// A file holding the clipboard image: the copied file itself, or the bitmap written out as a PNG.
-    public static func imageFile() -> URL? {
-        if let u = fileImageURL() { return u }
-        let pb = NSPasteboard.general
-        for t in imageTypes {
-            guard let d = pb.data(forType: t), let rep = NSBitmapImageRep(data: d), let png = rep.representation(using: .png, properties: [:]) else { continue }
-            // A new name every time, so an old thumbnail can never be matched to a new image.
-            let tmp = FileManager.default.temporaryDirectory
-            for old in (try? FileManager.default.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil)) ?? [] where old.lastPathComponent.hasPrefix("screencheck-clipboard") { try? FileManager.default.removeItem(at: old) }
-            let u = tmp.appendingPathComponent("screencheck-clipboard-\(UUID().uuidString).png")
-            if (try? png.write(to: u)) != nil { return u }
-        }
-        return nil
-    }
+/// The clipboard as the finder needs it. The app target supplies the AppKit implementation, so Core stays free of AppKit.
+public protocol ClipboardSource: AnyObject {
+    /// When this app saw the clipboard change to an image; nil if the image was there at launch.
+    var changedAt: Date? { get }
+    func poll()
+    func hasImage() -> Bool
+    func imageFile() -> URL?
 }
 
 public enum KeyStore {

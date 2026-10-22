@@ -5,8 +5,8 @@ import AppKit
 @testable import ScreenCheckCore
 
 final class CoreTests: XCTestCase {
-    // Reference values from hone's ariGrade (bun run readability.ts) on the same strings.
-    func testARIMatchesHone() {
+    // Reference values from an independent ARI implementation on the same strings.
+    func testARIMatchesReferenceValues() {
         XCTAssertEqual(Readability.ariGrade("Make the page simple.\nWe help teams ship better software every day.\nStart your free trial today and see how clear the layout can be."), 2)
         XCTAssertEqual(Readability.ariGrade("The interface component uses a consistent palette and responsive layout for accessibility.\nA grid is a grid."), 1)
         XCTAssertEqual(Readability.ariGrade("Financial infrastructure to grow your revenue. Accept payments, handle business banking, and implement custom revenue models from your first transaction to your billionth.\nNo setup fees."), 11)
@@ -317,7 +317,7 @@ final class CoreTests: XCTestCase {
     }
 }
 
-final class CoverageTests: XCTestCase {
+final class TextMeasurementTests: XCTestCase {
     func testLineSpacingRatioMeasuresPitch() {
         func b(_ y: Double) -> TextBox { TextBox(text: "a line of body text here", x: 40, y: y, w: 300, h: 16, fontPx: 16, bold: false, role: "body", onImage: false) }
         let r = Scoring.lineSpacingRatio([b(0), b(24), b(48), b(72)])
@@ -329,7 +329,7 @@ final class CoverageTests: XCTestCase {
         for i in 0..<6 { boxes.append(b("small body copy line", 300 + Double(i) * 30, 16)) }
         XCTAssertEqual(Scoring.emphasisCount(boxes), 1)
     }
-    func testNewIconChecksExistAndWeightsSum() {
+    func testIconChecksExistAndWeightsSum() {
         for id in ["E12", "E13"] { XCTAssertTrue(Rubric.checks.contains { $0.id == id }, id) }
     }
 }

@@ -39,6 +39,7 @@ enum TrustSignals {
     /// anything with digits or symbols are skipped, so only clear typos are counted.
     static func typos(in boxes: [TextBox]) -> [String] {
         var found = Set<String>()
+        // NSSpellChecker is the only offline spell checker on macOS; it is why Core imports AppKit.
         let checker = NSSpellChecker.shared
         for b in boxes where !["demo", "logo", "legal"].contains(b.role) {
             let toks = b.text.split(whereSeparator: { $0.isWhitespace }).map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?()\"“”‘’[]")) }

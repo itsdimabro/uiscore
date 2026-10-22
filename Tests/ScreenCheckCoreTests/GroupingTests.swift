@@ -1,13 +1,13 @@
 import XCTest
 @testable import ScreenCheckCore
 
-/// The dark "Comp Neo UX" sign-in card: a well-made screen that the scorer misread (slice 02).
-final class CompNeoTests: XCTestCase {
+/// The dark "Acme Console" sign-in card: a well-made screen that must not read as poorly grouped.
+final class GroupingTests: XCTestCase {
     func box(_ t: String, _ x: Double, _ y: Double, _ w: Double, _ h: Double, _ role: String, px: Double = 16) -> TextBox {
         TextBox(text: t, x: x, y: y, w: w, h: h, fontPx: px, bold: false, role: role, onImage: false)
     }
     // OCR boxes of the real screenshot (1982x1420): centred title, left-aligned labels, centred button text.
-    var boxes: [TextBox] { [box("Comp Neo UX", 806, 445, 316, 52, "heading", px: 26), box("Email", 610, 535, 77, 25, "body"),
+    var boxes: [TextBox] { [box("Acme Console", 806, 445, 316, 52, "heading", px: 26), box("Email", 610, 535, 77, 25, "body"),
                             box("Password", 607, 708, 135, 25, "body"), box("Sign in", 907, 912, 106, 32, "button")] }
     var vision: JSONValue { try! JSONValue.firstObject(in: "{\"screen_kind\":\"app\",\"page_type\":\"form\",\"tone\":\"plain_confident\"}") }
 

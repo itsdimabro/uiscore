@@ -8,7 +8,7 @@ public struct PageFacts {
     public var textItemCount: Int
     public var elementCount: Int
     public var navCount: Int
-    public var labels: [String]            // button + nav + link labels
+    public var labels: [String]
     public var vision: JSONValue
     public var imageHeight: Int? = nil
     public var allBoxes: [TextBox] = []
@@ -127,7 +127,6 @@ public enum Scoring {
         guard ratios.count >= 2 else { return nil }
         return ratios.sorted()[ratios.count / 2]
     }
-    static func lineSpacingOK(_ boxes: [TextBox]) -> Bool { (lineSpacingRatio(boxes) ?? 9) >= 1.4 }
 
     /// Answers every code-kind check. Returns id -> yes, plus contrast detail.
     public static func codeAnswers(_ f: PageFacts, pixels: Pixels?, appScreen: Bool = false) -> (answers: [String: Bool], contrast: ContrastReport, note: String?) {
@@ -165,7 +164,6 @@ public enum Scoring {
         let mCount = Double(max(1, measuredBoxes.count))
         let unmeasuredShare = rep.expected == 0 ? 1 : Double(rep.expected - rep.measured) / Double(rep.expected)
         a["c_cover"] = unmeasuredShare <= 0.3 && rep.measured > 0
-        // Colour contrast: share of measured text reaching its WCAG minimum (AA 4.5:1, 3:1 for large text and button labels).
         let passShare = Double(measuredBoxes.filter { $0.pass }.count) / mCount
         a["c_aa"] = passShare >= 0.95 || measuredBoxes.count - measuredBoxes.filter { $0.pass }.count <= 1
         a["c_most"] = passShare >= 0.8
@@ -185,7 +183,6 @@ public enum Scoring {
             let v = Int(h.dropFirst(), radix: 16) ?? 0; return ((v >> 16) & 255, (v >> 8) & 255, v & 255) }
         var colorKeys = Set<Int>(); var grayCount = 0
         for c in fgs { if isGray(c) { grayCount = 1 } else { colorKeys.insert(hueBucket(c)) } }
-        // E2: distinct non-gray text hues <= 3
         a["E2"] = colorKeys.count <= 3
         var note: String? = nil
         if !a["c_cover"]! { note = "only \(rep.measured) of \(rep.expected) text items could be measured" }
@@ -244,7 +241,6 @@ public enum Scoring {
         let head1 = f.boxes.filter { $0.role == "heading" }.map { $0.text }.joined(separator: " ")
         // 'one' vs 'several' flipped between runs on the same page, so it comes from the primary id list, not the enum.
         let prim = f.primaryCount == 0 ? "none" : "one"
-        // Type ratio from OCR heights: largest text over the median text.
         let hs = f.boxes.map { $0.fontPx }.sorted()
         let typeRatio = hs.isEmpty ? 0 : (hs.last! / max(1, hs[hs.count / 2]))
         a["fi_simple"] = word("blocks") != "many"
@@ -296,7 +292,6 @@ public enum Scoring {
         if let s = stats {
             a["fi_space"] = s.emptyPct >= 0.25
             a["fi_palette"] = (s.colorfulness ?? 0) <= 45
-            // Visual feeling, all from pixels.
             // Valence judges harmony, not lightness: a light page, or a dark one with a calm palette, is a restrained background.
             let calm = (s.hueBuckets ?? s.hueCount) <= 4 && s.accentSat <= 0.7
             a["vv1"] = s.bgLum > 0.5 || calm
@@ -353,6 +348,9 @@ public enum Scoring {
         return v.isEmpty ? 0 : Int((v.reduce(0, +) / Double(v.count)).rounded())
     }
 
+    /// Confidence below this percentage marks a meter or feeling as low confidence.
+    public static let lowConfidencePct = 78
+
     /// A meter whose applicable checks carry less than this share of its total weight is shown as not applicable.
     public static let minApplicablePct = 40
 
@@ -378,6 +376,6 @@ public enum Scoring {
         if possible != 100 { total = Int((Double(total) * 100 / Double(possible)).rounded()) }
         if let cap { total = min(total, cap) }
         let pct = Int((conf * 100 / Double(possible)).rounded())
-        return MeterResult(score: min(100, total), lowConfidence: pct < 78, confidencePct: pct, checks: results, note: nil)
+        return MeterResult(score: min(100, total), lowConfidence: pct < lowConfidencePct, confidencePct: pct, checks: results, note: nil)
     }
 }

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Port of hone packages/scoring/src/readability.ts (ariGrade) plus the UIScore rules in reading-level.md.
+/// Reading level: ARI grade plus the rules for which copy counts.
 public enum Readability {
     static let whitelist: Set<String> = {
         let base = ["hierarchy", "typography", "typographic", "contrast", "affordance", "kerning", "leading",
@@ -48,7 +48,7 @@ public enum Readability {
 
     static func letterCount(_ w: String) -> Int { w.filter { $0.isLetter || $0.isNumber }.count }
 
-    /// ARI, rounded and floored at 0. Matches hone's ariGrade with the default whitelist.
+    /// ARI, rounded and floored at 0. 
     public static func ariGrade(_ text: String) -> Int {
         let words = splitWords(text), sentences = splitSentences(text)
         if words.isEmpty || sentences.isEmpty { return 0 }

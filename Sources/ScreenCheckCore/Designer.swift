@@ -1,7 +1,7 @@
 import Foundation
 
 /// Per-meter ratings from one senior-designer Sonnet call (5 votes, mean per meter), blended with the checklist score.
-/// Weights were chosen on the gold calibrate half and the LabintheWild train 40 only (see README, 0.3.0).
+/// Weights were chosen on the gold calibrate half and the LabintheWild train 40 only.
 public enum Designer {
     public static let version = "d6"
     public static let meters = ["contrast", "grouping", "balance", "order", "familiar", "ease", "clarity", "trust"]
@@ -12,7 +12,7 @@ public enum Designer {
     public struct Rating: Codable, Equatable {
         public var scores: [String: Double]   // 1-9 per meter
         public var reason: String
-        public var reasons: [String: String] = [:]   // one plain sentence per meter
+        public var reasons: [String: String] = [:]
     }
 
     /// The fixed rules: one system block, cached across the five votes and across images.
@@ -158,12 +158,12 @@ public enum Designer {
 
     /// Five parallel votes (the model rejects a temperature setting), mean per meter. The means for one image (keyed by image hash) are stored, so scoring it again gives the same answer.
     /// nil when fewer than 2 votes are valid: the caller keeps the checklist.
-    static func rate(keys: [String], image: [String: Any], facts: String, hash: String?, cacheDir: URL) async -> Rating? {
+    static func rate(client: ModelClient = LiveClient(), keys: [String], image: [String: Any], facts: String, hash: String?, cacheDir: URL) async -> Rating? {
         let file = hash.map { cacheDir.appendingPathComponent("designer-\($0)-\(version).json") }
         if let f = file, let d = try? Data(contentsOf: f), let r = try? JSONDecoder().decode(Rating.self, from: d) { return r }
         let content: [[String: Any]] = [image, ["type": "text", "text": userText(facts: facts)]]
         let rs: [Rating] = await withTaskGroup(of: Rating?.self) { g in
-            for _ in 0..<votes { g.addTask { (try? await Claude.call(keys: keys, system: systemPrompt, content: content, maxTokens: 800, model: Claude.sonnet, cacheSystem: true)).flatMap { parse($0.json) } } }
+            for _ in 0..<votes { g.addTask { (try? await client.claude(keys: keys, system: systemPrompt, content: content, maxTokens: 800, model: Claude.sonnet, cacheSystem: true)).flatMap { parse($0.json) } } }
             var v: [Rating] = []
             for await x in g { if let x { v.append(x) } }
             return v

@@ -1,0 +1,604 @@
+{
+  "context" : {
+    "businessModel" : "saas",
+    "confidence" : "high",
+    "label" : "SaaS",
+    "location" : "homepage",
+    "purpose" : "Plan Projects"
+  },
+  "contextNote" : "A SaaS home page, so it's judged on how well it persuades.",
+  "contrastDetail" : {
+    "boxes" : [
+      {
+        "bg" : "#fefefe",
+        "fg" : "#222222",
+        "need" : 3,
+        "pass" : true,
+        "ratio" : 15.775160149492894,
+        "text" : "Plan every project in one place"
+      },
+      {
+        "need" : 3,
+        "pass" : false,
+        "text" : "Acme keeps tasks, files and people together so your team ships on time."
+      },
+      {
+        "bg" : "#fefefe",
+        "fg" : "#222222",
+        "need" : 3,
+        "pass" : true,
+        "ratio" : 15.775160149492894,
+        "text" : "Every plan includes unlimited projects and a free trial for fourteen days."
+      },
+      {
+        "bg" : "#2067eb",
+        "fg" : "#fefefe",
+        "need" : 3,
+        "pass" : true,
+        "ratio" : 4.956276592943178,
+        "text" : "Start free trial"
+      }
+    ],
+    "expected" : 4,
+    "measured" : 3,
+    "minRatio" : 4.956276592943178,
+    "passing" : 3
+  },
+  "createdAt" : "0001-01-01T00:00:00Z",
+  "designerReason" : "The headline is clear.",
+  "designerReasons" : {
+
+  },
+  "feeling" : {
+    "ci" : 24,
+    "cv" : 78,
+    "vi" : 74,
+    "vv" : 100
+  },
+  "feelingConfidencePct" : {
+    "a" : 100,
+    "v" : 100
+  },
+  "feelingLow" : {
+    "a" : false,
+    "v" : false
+  },
+  "id" : "",
+  "imageHeight" : 800,
+  "imageWidth" : 1200,
+  "meters" : {
+    "balance" : {
+      "checks" : [
+
+      ],
+      "confidencePct" : 100,
+      "designer" : 75,
+      "lowConfidence" : false,
+      "score" : 75
+    },
+    "clarity" : {
+      "checks" : [
+        {
+          "id" : "C1",
+          "kind" : "jev",
+          "weight" : 15,
+          "yes" : true
+        },
+        {
+          "id" : "C2",
+          "kind" : "jev",
+          "weight" : 7,
+          "yes" : true
+        },
+        {
+          "id" : "C3",
+          "kind" : "jev",
+          "weight" : 12,
+          "yes" : true
+        },
+        {
+          "id" : "C5",
+          "kind" : "code",
+          "weight" : 3,
+          "yes" : true
+        },
+        {
+          "id" : "C6",
+          "kind" : "jev",
+          "weight" : 15,
+          "yes" : true
+        },
+        {
+          "id" : "C7",
+          "kind" : "jev",
+          "weight" : 12,
+          "yes" : true
+        },
+        {
+          "id" : "C8",
+          "kind" : "jev",
+          "weight" : 5,
+          "yes" : true
+        },
+        {
+          "id" : "C9",
+          "kind" : "code",
+          "weight" : 13,
+          "yes" : true
+        },
+        {
+          "id" : "C10",
+          "kind" : "code",
+          "weight" : 10,
+          "yes" : true
+        }
+      ],
+      "confidencePct" : 100,
+      "designer" : 75,
+      "lowConfidence" : false,
+      "score" : 81
+    },
+    "contrast" : {
+      "checks" : [
+        {
+          "id" : "c_aa",
+          "kind" : "code",
+          "weight" : 30,
+          "yes" : true
+        },
+        {
+          "id" : "c_most",
+          "kind" : "code",
+          "weight" : 15,
+          "yes" : true
+        },
+        {
+          "id" : "c_floor",
+          "kind" : "code",
+          "weight" : 10,
+          "yes" : true
+        },
+        {
+          "id" : "c_head",
+          "kind" : "code",
+          "weight" : 5,
+          "yes" : true
+        },
+        {
+          "id" : "c_size",
+          "kind" : "code",
+          "weight" : 14,
+          "yes" : true
+        },
+        {
+          "id" : "c_weight",
+          "kind" : "code",
+          "weight" : 13,
+          "yes" : false
+        },
+        {
+          "id" : "c_space",
+          "kind" : "code",
+          "weight" : 13,
+          "yes" : true
+        }
+      ],
+      "confidencePct" : 100,
+      "lowConfidence" : false,
+      "score" : 87
+    },
+    "ease" : {
+      "checks" : [
+        {
+          "id" : "E1",
+          "kind" : "code",
+          "weight" : 12,
+          "yes" : true
+        },
+        {
+          "id" : "E2",
+          "kind" : "code",
+          "weight" : 12,
+          "yes" : true
+        },
+        {
+          "id" : "E4",
+          "kind" : "code",
+          "weight" : 5,
+          "yes" : true
+        },
+        {
+          "id" : "E5",
+          "kind" : "code",
+          "weight" : 7,
+          "yes" : true
+        },
+        {
+          "id" : "E6",
+          "kind" : "jev",
+          "weight" : 14,
+          "yes" : true
+        },
+        {
+          "id" : "E7",
+          "kind" : "jev",
+          "weight" : 12,
+          "yes" : true
+        },
+        {
+          "id" : "E9",
+          "kind" : "code",
+          "weight" : 12,
+          "yes" : true
+        },
+        {
+          "id" : "E10",
+          "kind" : "code",
+          "weight" : 10,
+          "yes" : true
+        },
+        {
+          "id" : "E12",
+          "kind" : "code",
+          "weight" : 8,
+          "yes" : true
+        },
+        {
+          "id" : "E13",
+          "kind" : "code",
+          "weight" : 8,
+          "yes" : true
+        }
+      ],
+      "confidencePct" : 100,
+      "designer" : 75,
+      "lowConfidence" : false,
+      "score" : 75
+    },
+    "familiar" : {
+      "checks" : [
+        {
+          "id" : "f_logo",
+          "kind" : "jev",
+          "weight" : 17,
+          "yes" : true
+        },
+        {
+          "id" : "f_topright",
+          "kind" : "jev",
+          "weight" : 11,
+          "yes" : true
+        },
+        {
+          "id" : "f_pattern",
+          "kind" : "jev",
+          "weight" : 21,
+          "yes" : true
+        },
+        {
+          "id" : "f_words",
+          "kind" : "jev",
+          "p" : 0.2,
+          "weight" : 14,
+          "yes" : false
+        },
+        {
+          "id" : "f_odd",
+          "kind" : "jev",
+          "weight" : 11,
+          "yes" : true
+        }
+      ],
+      "confidencePct" : 96,
+      "designer" : 75,
+      "lowConfidence" : false,
+      "score" : 78
+    },
+    "grouping" : {
+      "checks" : [
+        {
+          "id" : "g_prox",
+          "kind" : "code",
+          "weight" : 35,
+          "yes" : true
+        },
+        {
+          "id" : "g_sim",
+          "kind" : "code",
+          "weight" : 20,
+          "yes" : true
+        },
+        {
+          "id" : "g_region",
+          "kind" : "code",
+          "weight" : 15,
+          "yes" : true
+        },
+        {
+          "id" : "g_meaning",
+          "kind" : "code",
+          "weight" : 20,
+          "yes" : true
+        },
+        {
+          "id" : "g_align",
+          "kind" : "code",
+          "weight" : 10,
+          "yes" : true
+        }
+      ],
+      "confidencePct" : 100,
+      "designer" : 75,
+      "lowConfidence" : false,
+      "score" : 81
+    },
+    "order" : {
+      "checks" : [
+        {
+          "id" : "h_scale",
+          "kind" : "code",
+          "weight" : 18,
+          "yes" : true
+        },
+        {
+          "id" : "h_first",
+          "kind" : "jev",
+          "weight" : 18,
+          "yes" : true
+        },
+        {
+          "id" : "h_one_cta",
+          "kind" : "jev",
+          "weight" : 18,
+          "yes" : true
+        },
+        {
+          "id" : "h_cta_fold",
+          "kind" : "jev",
+          "weight" : 12,
+          "yes" : true
+        },
+        {
+          "id" : "h_emphasis",
+          "kind" : "jev",
+          "weight" : 19,
+          "yes" : true
+        }
+      ],
+      "confidencePct" : 100,
+      "designer" : 75,
+      "lowConfidence" : false,
+      "score" : 88
+    },
+    "trust" : {
+      "checks" : [
+        {
+          "id" : "T1",
+          "kind" : "jev",
+          "weight" : 6,
+          "yes" : true
+        },
+        {
+          "id" : "T2",
+          "kind" : "jev",
+          "weight" : 6,
+          "yes" : true
+        },
+        {
+          "id" : "T3",
+          "kind" : "jev",
+          "weight" : 5,
+          "yes" : true
+        },
+        {
+          "id" : "T5",
+          "kind" : "jev",
+          "weight" : 5,
+          "yes" : true
+        },
+        {
+          "id" : "T6",
+          "kind" : "jev",
+          "weight" : 9,
+          "yes" : true
+        },
+        {
+          "id" : "T7",
+          "kind" : "jev",
+          "weight" : 7,
+          "yes" : true
+        },
+        {
+          "id" : "T8",
+          "kind" : "code",
+          "weight" : 7,
+          "yes" : true
+        },
+        {
+          "id" : "T9",
+          "kind" : "code",
+          "weight" : 20,
+          "yes" : true
+        },
+        {
+          "id" : "T11",
+          "kind" : "code",
+          "weight" : 7,
+          "yes" : true
+        },
+        {
+          "id" : "T12",
+          "kind" : "code",
+          "weight" : 5,
+          "yes" : true
+        },
+        {
+          "id" : "T13",
+          "kind" : "code",
+          "weight" : 7,
+          "yes" : true
+        },
+        {
+          "id" : "T14",
+          "kind" : "code",
+          "weight" : 5,
+          "yes" : true
+        },
+        {
+          "id" : "T15",
+          "kind" : "code",
+          "weight" : 7,
+          "yes" : true
+        }
+      ],
+      "confidencePct" : 100,
+      "lowConfidence" : false,
+      "score" : 100
+    }
+  },
+  "overall" : 85,
+  "pageName" : "Acme Home",
+  "pixelStats" : {
+    "accentSat" : 0.8532570303465492,
+    "bgLum" : 0.9911020971138298,
+    "coloredBlocks" : 1,
+    "coloredPct" : 0.017158333333333334,
+    "colorfulness" : 24.346030490743818,
+    "coolShare" : 1,
+    "emptyPct" : 0.8938666666666667,
+    "greenPct" : 0,
+    "hueBuckets" : 1,
+    "hueCount" : 1,
+    "redOrangePct" : 0,
+    "topHueShare" : 1,
+    "warmPct" : 0
+  },
+  "readingGrade" : 6,
+  "readingGradeCapped" : false,
+  "readingWords" : 31,
+  "text" : {
+    "balance" : {
+      "fix" : "",
+      "why" : "The balance reads as fine."
+    },
+    "clarity" : {
+      "fix" : "",
+      "why" : "The clarity reads as fine."
+    },
+    "contrast" : {
+      "fix" : "Set the headline in a heavier weight than the body text.",
+      "why" : "The headline is not set heavier than the body text."
+    },
+    "ease" : {
+      "fix" : "",
+      "why" : "The ease reads as fine."
+    },
+    "familiar" : {
+      "fix" : "Rename the unusual nav labels to common words.",
+      "why" : "The familiar reads as fine."
+    },
+    "grouping" : {
+      "fix" : "",
+      "why" : "The grouping reads as fine."
+    },
+    "intensity" : {
+      "fix" : "",
+      "why" : "Quiet."
+    },
+    "order" : {
+      "fix" : "",
+      "why" : "The order reads as fine."
+    },
+    "reading" : {
+      "fix" : "",
+      "why" : ""
+    },
+    "trust" : {
+      "fix" : "",
+      "why" : ""
+    },
+    "valence" : {
+      "fix" : "",
+      "why" : "Calm and light."
+    }
+  },
+  "timings" : {
+    "code" : 0,
+    "jev" : 0,
+    "ocr" : 0,
+    "scoresFirst" : 0,
+    "total" : 0,
+    "vision" : 0,
+    "visionFields" : 0,
+    "write" : 0
+  },
+  "vision" : {
+    "accent_colors" : "one",
+    "blocks" : "few",
+    "business_model" : "saas",
+    "business_model_confidence" : "high",
+    "columns" : "up_to_three",
+    "corner_style" : "rounded",
+    "emphasis" : "few",
+    "first_fixation" : "headline",
+    "fonts" : "one_or_two",
+    "grouping_clear" : true,
+    "has_competing_promo" : false,
+    "has_dated_cues" : false,
+    "has_overlay" : false,
+    "has_proof" : true,
+    "heaviest_weight" : "bold",
+    "images_ok" : true,
+    "links_look_clickable" : true,
+    "location" : "homepage",
+    "logo_position" : "top-left",
+    "main_text_alignment" : "left",
+    "nav_position" : "top",
+    "nav_quieter_than_headline" : true,
+    "page_name" : "Acme Home",
+    "page_purpose" : "Plan projects",
+    "page_type" : "landing",
+    "panels" : "few",
+    "primary_buttons" : "one",
+    "primary_y_pct" : 45.62499997291667,
+    "primary_y_pt" : 364.99999978333335,
+    "real_imagery" : true,
+    "roles" : {
+      "button" : [
+        3
+      ],
+      "demo" : [
+
+      ],
+      "heading" : [
+        0
+      ],
+      "legal" : [
+
+      ],
+      "link" : [
+
+      ],
+      "logo" : [
+
+      ],
+      "nav" : [
+
+      ],
+      "overlay" : [
+
+      ],
+      "primary" : [
+        3
+      ],
+      "subhead" : [
+        1
+      ]
+    },
+    "screen_kind" : "marketing",
+    "text_on_busy_bg" : false,
+    "tone" : "plain_confident",
+    "top_right_control" : true,
+    "visual_description" : "A light page with a headline and one button."
+  }
+}

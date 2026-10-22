@@ -6,7 +6,7 @@ public struct Check: Codable {
     public let q: String
     public let yes: String
     public let w: Int
-    public let kind: String       // "code" or "jev"
+    public let kind: String
     public let jev: String
     public let pushes: String?    // feeling checks: "high" / "low"
     public let fix: String

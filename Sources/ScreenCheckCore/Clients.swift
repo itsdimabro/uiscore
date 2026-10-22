@@ -83,3 +83,19 @@ public enum Jev {
         return (out, Date().timeIntervalSince(t) * 1000)
     }
 }
+
+/// The two model services the pipeline talks to. Tests substitute fixed replies.
+public protocol ModelClient {
+    func claude(keys: [String], system: String, content: [[String: Any]], maxTokens: Int, model: String, cacheSystem: Bool) async throws -> (json: JSONValue, ms: Double)
+    func jev(key: String, state: JSONValue, questions: [String: String]) async throws -> (p: [String: Double], ms: Double)
+}
+
+public struct LiveClient: ModelClient {
+    public init() {}
+    public func claude(keys: [String], system: String, content: [[String: Any]], maxTokens: Int, model: String, cacheSystem: Bool) async throws -> (json: JSONValue, ms: Double) {
+        try await Claude.call(keys: keys, system: system, content: content, maxTokens: maxTokens, model: model, cacheSystem: cacheSystem)
+    }
+    public func jev(key: String, state: JSONValue, questions: [String: String]) async throws -> (p: [String: Double], ms: Double) {
+        try await Jev.ask(key: key, state: state, questions: questions)
+    }
+}

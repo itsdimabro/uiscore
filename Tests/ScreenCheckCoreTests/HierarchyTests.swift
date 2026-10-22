@@ -1,9 +1,9 @@
 import XCTest
 @testable import ScreenCheckCore
 
-/// The "Comp Neo UX" map page: H1, subtitle, then a two-column grid of 8 cards (bold title + grey description).
+/// The "Acme Console" map page: H1, subtitle, then a two-column grid of 8 cards (bold title + grey description).
 /// Synthetic boxes reproduce the layout; the source screenshot is never part of the repo.
-final class UXMapTests: XCTestCase {
+final class HierarchyTests: XCTestCase {
     func box(_ t: String, _ x: Double, _ y: Double, _ w: Double, _ h: Double, px: Double, bold: Bool = false, role: String = "body") -> TextBox {
         TextBox(text: t, x: x, y: y, w: w, h: h, fontPx: px, bold: bold, role: role, onImage: false)
     }
