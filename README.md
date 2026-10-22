@@ -63,7 +63,7 @@ Each meter is a set of yes/no checks drawn from design research. UIScore detects
 - Trust counts customer logos and product demonstration.
 - Cookie banners and chat bubbles are ignored for layout.
 - Comments only name real, visible elements.
-- The designer judge follows a rulebook built from Impeccable, UI Craft (educlopez), Anthropic's design plugin, the author's flashcards and 25 rules from design books. Each meter's reason is its own.
+- The designer judge follows one set of design principles and standards: Gestalt grouping, visual hierarchy and saliency, contrast, processing fluency, prototypicality and credibility, plus craft standards from Impeccable, UI Craft and Anthropic's design plugin. Each meter's reason is its own.
 - The headline-clarity check passes product-demonstrating homepages.
 - The footer check applies only when a footer is visible.
 
