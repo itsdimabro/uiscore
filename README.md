@@ -26,7 +26,7 @@ The eight meters roll up into one Score from 0 to 100.
 
 ## Install
 
-macOS 13 or newer. Download **UIScore.zip** from the [latest release](https://github.com/itsdimachka/uiscore/releases/latest), or follow [docs/INSTALL.md](docs/INSTALL.md) for the step-by-step guide and the one-line Terminal install.
+macOS 13 or newer. Download **UIScore.zip** from the [latest release](https://github.com/itsdimabro/uiscore/releases/latest), or follow [docs/INSTALL.md](docs/INSTALL.md) for the step-by-step guide and the one-line Terminal install.
 
 ## Keys
 
