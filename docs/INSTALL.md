@@ -11,11 +11,11 @@ UIScore looks at a screenshot and gives you a design score. It takes about five 
 Paste this into Terminal to download, install and open UIScore in one go. This route skips the Gatekeeper warning in step 3.
 
 ```sh
-curl -L -o ~/Downloads/UIScore.zip https://github.com/itsdimachka/uiscore/releases/latest/download/UIScore.zip && unzip -o ~/Downloads/UIScore.zip -d ~/Downloads && rm -rf /Applications/UIScore.app && mv ~/Downloads/UIScore.app /Applications/ && open /Applications/UIScore.app
+curl -L -o ~/Downloads/UIScore.zip https://github.com/itsdimabro/uiscore/releases/latest/download/UIScore.zip && unzip -o ~/Downloads/UIScore.zip -d ~/Downloads && rm -rf /Applications/UIScore.app && mv ~/Downloads/UIScore.app /Applications/ && open /Applications/UIScore.app
 ```
 
 ## 1. Unzip
-Download **UIScore.zip** from the [latest release](https://github.com/itsdimachka/uiscore/releases/latest). Double-click it in your Downloads folder. **UIScore** appears.
+Download **UIScore.zip** from the [latest release](https://github.com/itsdimabro/uiscore/releases/latest). Double-click it in your Downloads folder. **UIScore** appears.
 
 ## 2. Move it to Applications
 Open **Finder**. Drag **UIScore** onto the **Applications** folder in the left side bar.
