@@ -4,6 +4,11 @@ All notable changes to UIScore are listed here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-10-29
+
+### Fixed
+- The app no longer crashes at the shortcut step of onboarding, or in Settings, on a Mac other than the one that built it. The build now ships the shortcut library's resource bundle inside the app.
+
 ## [0.3.4] - 2026-10-22
 
 ### Changed

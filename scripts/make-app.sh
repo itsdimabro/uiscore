@@ -3,10 +3,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/ScreenCheck"
+BIN_DIR="$(swift build -c release --show-bin-path)"
+BIN="$BIN_DIR/ScreenCheck"
 APP="dist/UIScore.app"
 rm -rf dist && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/ScreenCheck"
+# SwiftPM resource bundles (KeyboardShortcuts' strings) are looked up in Contents/Resources. Without them
+# Bundle.module traps the first time the shortcut recorder appears (onboarding, Settings).
+shopt -s nullglob
+for b in "$BIN_DIR"/*.bundle; do ditto "$b" "$APP/Contents/Resources/$(basename "$b")"; done
+shopt -u nullglob
+[ -d "$APP/Contents/Resources/KeyboardShortcuts_KeyboardShortcuts.bundle" ] || { echo "Missing KeyboardShortcuts resource bundle" >&2; exit 1; }
 cat > "$APP/Contents/Info.plist" <<P
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -16,8 +23,8 @@ cat > "$APP/Contents/Info.plist" <<P
 <key>CFBundleIdentifier</key><string>com.screencheck.app</string>
 <key>CFBundleExecutable</key><string>ScreenCheck</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.3.4</string>
-<key>CFBundleVersion</key><string>4</string>
+<key>CFBundleShortVersionString</key><string>0.3.5</string>
+<key>CFBundleVersion</key><string>5</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSUIElement</key><true/>
 <key>NSDesktopFolderUsageDescription</key><string>UIScore reads your newest screenshot from the Desktop.</string>
